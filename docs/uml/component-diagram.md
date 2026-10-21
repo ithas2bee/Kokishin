@@ -1,30 +1,39 @@
 # Component Diagram
 
-The diagram shows the intended high-level separation of responsibilities.
+The diagram shows the current backend project boundaries and the intended
+browser and database integrations. Dashed nodes are planned external
+components; no product endpoints or persistence are implemented yet.
 
 ```mermaid
 flowchart TB
-    Browser[React and TypeScript web app]
-    API[ASP.NET Core API]
-    Application[Application use cases]
-    Domain[Domain model and rules]
-    Infrastructure[Infrastructure and persistence]
-    Database[(SQL Server)]
+    Browser[React and TypeScript web app] -. planned .-> API
+    subgraph Backend
+        API[Kokishin.Api]
+        Application[Kokishin.Application]
+        Domain[Kokishin.Domain]
+        Infrastructure[Kokishin.Infrastructure]
+    end
+    Database[(SQL Server, planned)]
 
-    Browser -->|HTTP requests| API
-    API --> Application
-    Application --> Domain
-    Application --> Infrastructure
-    Infrastructure --> Database
+    API -->|uses| Application
+    API -->|composes| Infrastructure
+    Application -->|depends on| Domain
+    Infrastructure -->|implements abstractions from| Application
+    Infrastructure -->|uses| Domain
+    Infrastructure -. planned .-> Database
 ```
 
 ## Responsibilities
 
 - **Web app:** displays navigation, course content, forms, submissions, grades, and feedback.
-- **API:** exposes endpoints, validates requests, applies authorization, and returns responses.
-- **Application:** coordinates use cases such as creating a course or reviewing a submission.
+- **API (`backend/src/Kokishin.Api`):** HTTP delivery and composition root. Product endpoints, request validation, and authorization will be added with their features.
+- **Application (`backend/src/Kokishin.Application`):** coordinates use cases and owns abstractions required from infrastructure.
 - **Domain:** owns core concepts and business rules.
-- **Infrastructure:** implements persistence and other external technical details.
-- **Database:** stores durable application data.
+- **Infrastructure (`backend/src/Kokishin.Infrastructure`):** implements application abstractions and handles persistence and other external technical details.
+- **Database:** planned durable storage; no provider or schema is part of the current foundation.
 
-This is a logical component view. Physical project boundaries and deployment details will be finalized when implementation begins.
+The project references enforce the dependency direction: Domain has no project
+references; Application references only Domain; Infrastructure references
+Application and Domain; API references Application and Infrastructure. The API
+composes Infrastructure so application and domain code do not depend on it.
+See [Backend structure](../backend/README.md) for the project layout.

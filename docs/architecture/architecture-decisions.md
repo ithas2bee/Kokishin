@@ -4,19 +4,19 @@ This file records architectural decisions and their rationale. Add a dated entry
 
 ## AD-001: Use a layered application structure
 
-**Status:** Proposed
+**Status:** Accepted
 
-**Decision:** Separate the web/API entry points, application use cases, domain rules, and infrastructure concerns.
+**Decision:** Separate the API entry point, application use cases, domain rules, and infrastructure concerns. Application depends on Domain and owns abstractions for external concerns; Infrastructure implements those abstractions. The API is the composition root and may reference both Application and Infrastructure.
 
-**Reasoning:** This keeps business rules testable and reduces coupling between course behavior, the user interface, and persistence.
+**Reasoning:** This keeps business rules testable and prevents persistence and other infrastructure details from controlling application or domain logic. The project boundaries are documented in [Backend structure](../backend/README.md).
 
 ## AD-002: Initial technology direction
 
-**Status:** Proposed
+**Status:** Accepted
 
 **Decision:** Use C# and ASP.NET Core for the backend, React with TypeScript for the web interface, and SQL Server with Entity Framework Core for persistence.
 
-**Reasoning:** This direction fits the project's intended maintainability and the developer's existing .NET experience while allowing a modern web UI.
+**Reasoning:** This direction fits the project's intended maintainability and the developer's existing .NET experience while allowing a modern web UI. The backend projects currently target .NET 10. SQL Server and Entity Framework Core remain planned choices; persistence is not part of the backend foundation.
 
 ## AD-003: Treat the MVP as a focused first release
 
