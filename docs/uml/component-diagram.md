@@ -6,7 +6,7 @@ dependency-injection registrations, and persistence are not implemented yet.
 
 ```mermaid
 flowchart TB
-    Browser[React and TypeScript web app, planned] -. planned HTTP .-> API
+    Browser[React and TypeScript web app, planned] -.->|planned HTTP| API
     subgraph Backend
         API[Kokishin.Api]
         Application[Kokishin.Application]
@@ -20,7 +20,7 @@ flowchart TB
     Application -->|project reference| Domain
     Infrastructure -->|project reference| Application
     Infrastructure -->|project reference| Domain
-    Infrastructure -. planned persistence .-> Database
+    Infrastructure -.->|planned persistence| Database
 ```
 
 ## Responsibilities
