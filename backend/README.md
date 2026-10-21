@@ -61,9 +61,60 @@ Infrastructure, and API must not take a direct dependency on Domain.
 - Prefer focused changes and reuse existing patterns. Add abstractions only
   where they clarify a real boundary or responsibility.
 
-This foundation does not yet include product endpoints, feature use cases,
-database providers, an ORM, or test projects. Do not describe or implement
-planned functionality as if it already exists.
+This foundation does not yet include product endpoints, feature use cases, or
+test projects. Do not describe or implement planned functionality as if it
+already exists.
+
+## Persistence
+
+Persistence uses **Entity Framework Core 10 with SQLite**. SQLite keeps local
+development self-contained and stores data in a file, avoiding a separately
+managed database service. Its single-writer concurrency and local-file
+deployment model are not a fit for every production workload; deployments
+requiring a server database or higher concurrency should change the provider
+registration in Infrastructure. Provider configuration and `KokishinDbContext`
+live in `Kokishin.Infrastructure`; neither Application nor Domain references EF
+Core or a database provider.
+
+The Development configuration uses `Data Source=kokishin.db`, a local file
+without credentials. For another environment, supply the connection string via
+the `ConnectionStrings__Kokishin` environment variable or a secret store. Do
+not put production credentials in checked-in settings files.
+
+The initial migration is an empty baseline: it creates only EF Core's migration
+metadata tables and no product tables. From `backend/`, install the EF
+command-line tool once and initialize the local database:
+
+```sh
+dotnet tool install --global dotnet-ef --version 10.0.13
+dotnet ef database update \
+  --project src/Kokishin.Infrastructure \
+  --startup-project src/Kokishin.Api
+```
+
+Then check the configured database connection while the API is running:
+
+```sh
+dotnet run --project src/Kokishin.Api
+curl --fail http://localhost:5108/health/database
+```
+
+The health endpoint returns success only when EF Core can connect to the
+configured database. The API does not create or migrate schemas on startup.
+Create and apply each later schema change explicitly from `backend/`:
+
+```sh
+dotnet ef migrations add AddPersistenceModel \
+  --project src/Kokishin.Infrastructure \
+  --startup-project src/Kokishin.Api \
+  --output-dir Persistence/Migrations
+dotnet ef database update \
+  --project src/Kokishin.Infrastructure \
+  --startup-project src/Kokishin.Api
+```
+
+Commit generated migrations as schema changes. The SQLite database and its
+journal files are local development data and are ignored by Git.
 
 ## Build and test
 
