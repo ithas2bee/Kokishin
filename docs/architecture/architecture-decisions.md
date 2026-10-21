@@ -4,17 +4,17 @@ This file records architectural decisions and their rationale. Add a dated entry
 
 ## AD-001: Use a layered application structure
 
-**Status:** Proposed
+**Status:** Accepted
 
-**Decision:** Separate the web/API entry points, application use cases, domain rules, and infrastructure concerns.
+**Decision:** Separate the API entry point, application use cases, domain rules, and infrastructure concerns. Application depends on Domain and owns abstractions for external concerns; Infrastructure implements those abstractions. The API is the composition root and may reference both Application and Infrastructure.
 
-**Reasoning:** This keeps business rules testable and reduces coupling between course behavior, the user interface, and persistence.
+**Reasoning:** This keeps business rules testable and prevents persistence and other infrastructure details from controlling application or domain logic. The project boundaries are documented in [Backend structure](../backend/README.md).
 
-## AD-002: Initial technology direction
+## AD-002: Backend and web technology direction
 
-**Status:** Proposed
+**Status:** Accepted
 
-**Decision:** Use C# and ASP.NET Core for the backend, React with TypeScript for the web interface, and SQL Server with Entity Framework Core for persistence.
+**Decision:** Use C# and ASP.NET Core for the backend and React with TypeScript for the web interface. The backend projects currently target .NET 10.
 
 **Reasoning:** This direction fits the project's intended maintainability and the developer's existing .NET experience while allowing a modern web UI.
 
@@ -33,3 +33,11 @@ This file records architectural decisions and their rationale. Add a dated entry
 **Decision:** Use the name Kokishin and a forest-green visual identity. Use familiar LMS navigation patterns as inspiration, but do not use another product's logo or imply affiliation.
 
 **Reasoning:** The interface should feel recognizable without misrepresenting ownership or copying another product's identity.
+
+## AD-005: Planned persistence technology
+
+**Status:** Proposed
+
+**Decision:** SQL Server with Entity Framework Core is the planned persistence technology; neither is part of the current backend foundation.
+
+**Reasoning:** Persistence should be introduced with a defined feature and schema rather than added to the structural foundation without a use case.
