@@ -3,13 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Domain", "Kokishin.Domain\Kokishin.Domain.csproj", "{A289C21B-E903-441B-8A39-21D7A8477D46}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Api", "Kokishin.Api\Kokishin.Api.csproj", "{D14A0B61-FE7C-4470-B498-84C52E27DC3E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Application", "Kokishin.Application\Kokishin.Application.csproj", "{001DB531-C7F5-4C56-8B47-3041D8143DC6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Infrastructure", "Kokishin.Infrastructure\Kokishin.Infrastructure.csproj", "{3AB1783C-69B4-4D48-BB87-A3015E26A4EE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Domain", "Kokishin.Domain\Kokishin.Domain.csproj", "{A289C21B-E903-441B-8A39-21D7A8477D46}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Api", "Kokishin.Api\Kokishin.Api.csproj", "{D14A0B61-FE7C-4470-B498-84C52E27DC3E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Infrastructure", "Kokishin.Infrastructure\Kokishin.Infrastructure.csproj", "{3AB1783C-69B4-4D48-BB87-A3015E26A4EE}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Kokishin.Tests", "Kokishin.Tests\Kokishin.Tests.csproj", "{EA7CBB4E-0396-4D46-8FBC-93D3095FBE91}"
 EndProject
