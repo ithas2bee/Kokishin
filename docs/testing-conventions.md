@@ -72,6 +72,35 @@ fixture owns and disposes those resources. Do not share mutable database state
 between tests. Extract a helper only after repeated setup makes the tests
 materially clearer; avoid abstractions that hide the Arrange/Act/Assert flow.
 
+## Architecture boundary tests
+
+`Kokishin.Tests/Architecture/ProjectReferenceArchitectureTests.cs` reads each
+root-level project's `.csproj` file and inspects its `ProjectReference` entries.
+The enforced references are:
+
+| Project | Required project references |
+| --- | --- |
+| `Kokishin.Domain` | None |
+| `Kokishin.Application` | `Kokishin.Domain` |
+| `Kokishin.Infrastructure` | `Kokishin.Application`, `Kokishin.Domain` |
+| `Kokishin.Api` | `Kokishin.Application`, `Kokishin.Infrastructure` |
+| `Kokishin.Tests` | `Kokishin.Api`, `Kokishin.Infrastructure` |
+
+The test project references the API for its host-based tests and Infrastructure
+for tests that directly exercise infrastructure registration. The architecture
+tests locate `Kokishin.sln` by walking up from the test assembly's output
+directory, so they do not depend on the current working directory or a
+developer-specific path.
+
+The checks report unexpected and missing references with the affected projects
+and rule. A graph traversal also detects direct and indirect circular
+dependencies and reports the dependency cycle. Isolated temporary `.csproj`
+fixtures verify that violations and cycles are detected without changing the
+solution's project files. Run the checks with `dotnet test Kokishin.sln` from
+the repository root. When a check fails, remove the invalid reference or update
+the architecture decision and corresponding rules together if the intended
+architecture has changed.
+
 ## Running and diagnosing tests
 
 Run commands from the repository root. The full suite runs through the solution:
