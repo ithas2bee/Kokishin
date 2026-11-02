@@ -47,3 +47,6 @@ dotnet test Kokishin.sln
 There is no configured lint/format command. Verify that project references
 still match `README.md`, inspect the final diff for unrelated changes, and
 report any validation command that could not run and why.
+
+Follow the backend [testing conventions](docs/testing-conventions.md) when
+adding or changing tests.

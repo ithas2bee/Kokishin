@@ -14,6 +14,10 @@ This directory contains the product goals, requirements, architecture notes, dia
 - [Architecture decisions](architecture/architecture-decisions.md)
 - [Repository and backend structure](../README.md#solution-structure)
 
+## Development
+
+- [Backend testing conventions](testing-conventions.md)
+
 ## UML and data model
 
 - [Use-case diagram](uml/use-case-diagram.md)

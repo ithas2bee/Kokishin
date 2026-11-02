@@ -26,7 +26,7 @@ public class InfrastructureRegistrationTests
     }
 
     [Fact]
-    public void AddInfrastructure_RequiresConnectionString()
+    public void AddInfrastructure_WithoutConnectionString_ThrowsInvalidOperationException()
     {
         var configuration = new ConfigurationManager();
         var services = new ServiceCollection();
