@@ -1,14 +1,24 @@
+using System.Diagnostics;
 using Kokishin.Application;
 using Kokishin.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Logging.Configure(options =>
+    options.ActivityTrackingOptions =
+        ActivityTrackingOptions.TraceId |
+        ActivityTrackingOptions.SpanId |
+        ActivityTrackingOptions.ParentId);
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
     {
-        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+        var activity = Activity.Current;
+        context.ProblemDetails.Extensions["traceId"] =
+            activity is { IdFormat: ActivityIdFormat.W3C } && activity.TraceId != default
+                ? activity.TraceId.ToString()
+                : context.HttpContext.TraceIdentifier;
 
         if (context.ProblemDetails.Status == StatusCodes.Status500InternalServerError)
         {

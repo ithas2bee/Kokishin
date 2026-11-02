@@ -110,9 +110,13 @@ is running, check the configured database with
 ## API error responses
 
 The API returns errors using ASP.NET Core Problem Details (`application/problem+json`).
-Responses include the HTTP `status`, a safe `title`, and a `traceId` when request
-diagnostic information is available. Unexpected server errors use a generic
-`detail`; internal exception messages and stack traces are not returned.
+Responses include the HTTP `status`, a safe `title`, and a `traceId`. The
+`traceId` is the request's W3C `Activity.TraceId` when available, otherwise the
+ASP.NET Core `HttpContext.TraceIdentifier`. ASP.NET Core parses valid incoming
+W3C `traceparent` context and generates an Activity trace ID when context is
+missing or invalid; arbitrary request header values are not echoed. Unexpected
+server errors use a generic `detail`; internal exception messages and stack
+traces are not returned.
 Validation failures use status `400` and include an `errors` object keyed by
 field, while other unhandled HTTP error statuses use their corresponding status.
 
@@ -128,13 +132,23 @@ For example, an unexpected server error has this shape:
 }
 ```
 
+Use the returned `traceId` to find related request log entries. For example, if
+a client reports `traceId` `4bf92f3577b34da6a3ce929d0e0e4736`, search the JSON
+console logs for that value in the Activity scope's `TraceId`. When a valid
+`traceparent` is supplied, its validated trace ID is used; otherwise ASP.NET
+Core generates the request Activity context. Invalid trace headers do not stop
+request processing, and untrusted header contents are not used as diagnostic
+identifiers.
+
 ## Application logging
 
 The API uses the built-in `Microsoft.Extensions.Logging` abstractions and the
 ASP.NET Core console provider. Console output uses the built-in JSON formatter,
 including structured log state and exception details, with UTC timestamps. The
-default levels are `Information` for application events and `Warning` for
-`Microsoft.AspNetCore`; the Development configuration follows the same levels.
+formatter includes logging scopes; the logger factory adds Activity `TraceId`,
+`SpanId`, and `ParentId` values to those scopes. The default levels are
+`Information` for application events and `Warning` for `Microsoft.AspNetCore`;
+the Development configuration follows the same levels.
 
 Logging levels and formatter options follow ASP.NET Core configuration
 precedence. Set values in `appsettings.{Environment}.json` to override shared
