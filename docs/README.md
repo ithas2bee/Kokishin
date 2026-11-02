@@ -12,7 +12,7 @@ This directory contains the product goals, requirements, architecture notes, dia
 
 - [System context](architecture/system-context.md)
 - [Architecture decisions](architecture/architecture-decisions.md)
-- [Backend structure](../backend/README.md)
+- [Repository and backend structure](../README.md#solution-structure)
 
 ## UML and data model
 
