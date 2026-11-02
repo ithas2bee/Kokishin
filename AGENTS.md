@@ -1,11 +1,10 @@
-# Backend agent instructions
+# Repository agent instructions
 
-These instructions apply to changes under `backend/`. Follow any applicable
-repository-wide instructions as well.
+These instructions apply to the entire repository.
 
 ## Before changing code
 
-1. Read this file and `README.md`, then inspect the solution, the relevant
+1. Read this file and `README.md`, then inspect the root solution, the relevant
    project files, nearby implementation and tests, and any related product or
    architecture documentation.
 2. Confirm the current project-reference rules in the `.csproj` files before
@@ -16,8 +15,10 @@ repository-wide instructions as well.
 
 ## Scope and architecture
 
-- Implement only the assigned story. Do not add unrelated functionality,
-  refactor unrelated code, or change the solution/project structure.
+- Implement only the assigned story. Do not add unrelated functionality or
+  refactor unrelated code. Keep the .NET solution and its projects at the
+  repository root; change that structure only when the issue explicitly requires
+  it.
 - Preserve the project boundaries and allowed project references documented in
   `README.md`. Do not change project references unless the issue explicitly
   requires it; if it appears necessary, explain the conflict before expanding
@@ -36,15 +37,13 @@ repository-wide instructions as well.
 
 ## Validation checklist
 
-From `/backend`, run:
+From the repository root, run:
 
 ```sh
-dotnet build Kokishin.Backend.sln
-dotnet test Kokishin.Backend.sln
+dotnet build Kokishin.sln
+dotnet test Kokishin.sln
 ```
 
-The repository currently has no test projects and no configured backend
-lint/format command. Report this when applicable rather than claiming tests or
-linting ran. Also verify that any changed project references still match
-`README.md`, inspect the final diff for unrelated changes, and report any
-validation command that could not run and why.
+There is no configured lint/format command. Verify that project references
+still match `README.md`, inspect the final diff for unrelated changes, and
+report any validation command that could not run and why.
