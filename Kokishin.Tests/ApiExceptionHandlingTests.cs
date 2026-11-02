@@ -199,7 +199,7 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     private sealed class IsolatedEnvironmentVariablesConfigurationProvider(
-        IEnumerable<KeyValuePair<string, string?>> variables) : EnvironmentVariablesConfigurationProvider
+        IEnumerable<KeyValuePair<string, string?>> variables) : ConfigurationProvider
     {
         public override void Load() =>
             Data = variables.ToDictionary(
