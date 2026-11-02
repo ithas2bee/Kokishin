@@ -1,10 +1,13 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Kokishin.Tests;
 
@@ -41,6 +44,40 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         Assert.DoesNotContain("Sensitive exception detail.", body);
         Assert.DoesNotContain("InvalidOperationException", body);
         Assert.DoesNotContain(" at ", body);
+    }
+
+    [Fact]
+    public async Task UnhandledException_IsLoggedWithExceptionDetails()
+    {
+        var loggerProvider = new CapturingLoggerProvider();
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider)));
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/test/exception");
+
+        Assert.Equal(System.Net.HttpStatusCode.InternalServerError, response.StatusCode);
+        var entry = Assert.Single(loggerProvider.Entries, entry => entry.Exception is not null);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.IsType<InvalidOperationException>(entry.Exception);
+        Assert.Equal("Sensitive exception detail.", entry.Exception.Message);
+    }
+
+    [Fact]
+    public void LoggingLevel_CanBeOverriddenThroughConfiguration()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.Add(new IsolatedEnvironmentVariablesConfigurationSource(
+                    [new("Logging__LogLevel__Default", "Trace")])));
+        });
+        using var client = factory.CreateClient();
+        var logger = factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LoggingConfigurationTest");
+
+        Assert.True(logger.IsEnabled(LogLevel.Trace));
     }
 
     [Fact]
@@ -110,5 +147,64 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
                     await nextMiddleware(context);
                 });
             };
+    }
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<CapturedLogEntry> _entries = new();
+
+        public IReadOnlyCollection<CapturedLogEntry> Entries => _entries.ToArray();
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(
+            string categoryName,
+            ConcurrentQueue<CapturedLogEntry> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                entries.Enqueue(new CapturedLogEntry(
+                    categoryName,
+                    logLevel,
+                    formatter(state, exception),
+                    exception));
+            }
+        }
+    }
+
+    private sealed record CapturedLogEntry(
+        string Category,
+        LogLevel Level,
+        string Message,
+        Exception? Exception);
+
+    private sealed class IsolatedEnvironmentVariablesConfigurationSource(
+        IEnumerable<KeyValuePair<string, string?>> variables) : IConfigurationSource
+    {
+        public IConfigurationProvider Build(IConfigurationBuilder builder) =>
+            new IsolatedEnvironmentVariablesConfigurationProvider(variables);
+    }
+
+    private sealed class IsolatedEnvironmentVariablesConfigurationProvider(
+        IEnumerable<KeyValuePair<string, string?>> variables) : ConfigurationProvider
+    {
+        public override void Load() =>
+            Data = variables.ToDictionary(
+                variable => variable.Key.Replace("__", ConfigurationPath.KeyDelimiter, StringComparison.Ordinal),
+                variable => variable.Value,
+                StringComparer.OrdinalIgnoreCase);
     }
 }
