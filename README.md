@@ -128,6 +128,37 @@ For example, an unexpected server error has this shape:
 }
 ```
 
+## Application logging
+
+The API uses the built-in `Microsoft.Extensions.Logging` abstractions and the
+ASP.NET Core console provider. Console output uses the built-in JSON formatter,
+including structured log state and exception details, with UTC timestamps. The
+default levels are `Information` for application events and `Warning` for
+`Microsoft.AspNetCore`; the Development configuration follows the same levels.
+
+Logging levels and formatter options follow ASP.NET Core configuration
+precedence. Set values in `appsettings.{Environment}.json` to override shared
+settings for an environment, or use environment variables (which take
+precedence), for example:
+
+```sh
+export Logging__LogLevel__Default=Debug
+export Logging__LogLevel__Microsoft.AspNetCore=Information
+```
+
+Use `Trace` or `Debug` only when detailed diagnostics are needed, `Information`
+for operational events, `Warning` for recoverable unexpected conditions, and
+`Error` for failed operations. Keep messages stable and pass variable values as
+named structured properties rather than interpolating them into the message.
+Unhandled exceptions are logged server-side by ASP.NET Core's exception
+handling middleware with exception details; the API response remains the safe
+Problem Details shape described above.
+
+Never log passwords, credentials, tokens, API keys, connection strings, or
+sensitive personal information. Do not log complete request or response
+bodies, and redact sensitive values from any diagnostic data or exception
+messages before logging.
+
 ## Project documentation
 
 Start with [`docs/README.md`](docs/README.md) for the documentation index.
