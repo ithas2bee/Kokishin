@@ -46,10 +46,14 @@ Open [`Kokishin.sln`](Kokishin.sln) from the repository root in Visual Studio.
 Run these commands from the repository root:
 
 ```sh
+dotnet restore Kokishin.sln
 dotnet build Kokishin.sln
 dotnet test Kokishin.sln
 dotnet run --project Kokishin.Api
 ```
+
+See [backend testing conventions](docs/testing-conventions.md) for guidance on
+organizing and running tests.
 
 The API uses the standard ASP.NET Core configuration system. Shared,
 non-secret settings belong in `Kokishin.Api/appsettings.json`. Environment
