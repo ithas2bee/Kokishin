@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -69,7 +70,9 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
-            builder.UseSetting("Logging:LogLevel:Default", "Trace");
+            builder.ConfigureAppConfiguration((_, configuration) =>
+                configuration.Add(new IsolatedEnvironmentVariablesConfigurationSource(
+                    [new("Logging__LogLevel__Default", "Trace")])));
         });
         using var client = factory.CreateClient();
         var logger = factory.Services.GetRequiredService<ILoggerFactory>().CreateLogger("LoggingConfigurationTest");
@@ -187,4 +190,21 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         LogLevel Level,
         string Message,
         Exception? Exception);
+
+    private sealed class IsolatedEnvironmentVariablesConfigurationSource(
+        IEnumerable<KeyValuePair<string, string?>> variables) : IConfigurationSource
+    {
+        public IConfigurationProvider Build(IConfigurationBuilder builder) =>
+            new IsolatedEnvironmentVariablesConfigurationProvider(variables);
+    }
+
+    private sealed class IsolatedEnvironmentVariablesConfigurationProvider(
+        IEnumerable<KeyValuePair<string, string?>> variables) : EnvironmentVariablesConfigurationProvider
+    {
+        public override void Load() =>
+            Data = variables.ToDictionary(
+                variable => variable.Key.Replace("__", ConfigurationPath.KeyDelimiter, StringComparison.Ordinal),
+                variable => variable.Value,
+                StringComparer.OrdinalIgnoreCase);
+    }
 }
