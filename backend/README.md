@@ -76,10 +76,38 @@ registration in Infrastructure. Provider configuration and `KokishinDbContext`
 live in `Kokishin.Infrastructure`; neither Application nor Domain references EF
 Core or a database provider.
 
-The Development configuration uses `Data Source=kokishin.db`, a local file
-without credentials. For another environment, supply the connection string via
-the `ConnectionStrings__Kokishin` environment variable or a secret store. Do
-not put production credentials in checked-in settings files.
+## Configuration
+
+The API uses the standard ASP.NET Core configuration system. Shared, non-secret
+settings belong in `src/Kokishin.Api/appsettings.json`; environment-specific
+settings are loaded from `appsettings.{Environment}.json`. The checked-in
+`appsettings.Development.json` supplies `Data Source=kokishin.db`, a local
+SQLite file that requires no credentials. The `http` and `https` launch profiles
+select the Development environment.
+
+Run locally from `backend/` with:
+
+```sh
+dotnet run --project src/Kokishin.Api
+```
+
+The Infrastructure registration requires a non-empty SQLite connection string
+named `Kokishin` and validates its format and data source during startup. For
+Production, set `ASPNETCORE_ENVIRONMENT=Production` and provide the connection
+string through the environment or a secret-management provider; do not commit
+production values to `appsettings*.json`. ASP.NET Core maps double underscores
+in environment variable names to configuration colons:
+
+```sh
+export ASPNETCORE_ENVIRONMENT=Production
+export ConnectionStrings__Kokishin='Data Source=<deployment-managed-path>'
+dotnet run --no-launch-profile --project src/Kokishin.Api
+```
+
+Replace `<deployment-managed-path>` with the SQLite file location managed by
+the deployment. Keep credentials and other secrets in the deployment's secret
+store and inject them at runtime. A missing, empty, malformed, or source-less
+connection string stops startup with an error identifying the required setting.
 
 The initial migration is an empty baseline: it creates only EF Core's migration
 metadata tables and no product tables. From `backend/`, install the EF
