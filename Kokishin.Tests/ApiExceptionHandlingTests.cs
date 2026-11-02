@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -47,20 +48,77 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public async Task UnhandledException_IsLoggedWithExceptionDetails()
+    public async Task RequestWithoutTraceContext_GeneratesTraceIdAndIncludesItInLogScope()
     {
         var loggerProvider = new CapturingLoggerProvider();
         using var factory = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider)));
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/test/exception");
+        using var response = await client.GetAsync("/test/diagnostics");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var traceId = body.RootElement.GetProperty("traceId").GetString();
+        var entry = Assert.Single(loggerProvider.Entries, entry => entry.Message == "Request diagnostic context");
+
+        Assert.False(string.IsNullOrWhiteSpace(traceId));
+        Assert.Matches("^[0-9a-f]{32}$", traceId);
+        Assert.Contains(entry.Scopes, scope => scope.Contains($"TraceId={traceId}", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RequestWithValidTraceContext_UsesIncomingActivityTraceId()
+    {
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        const string traceParent = $"00-{traceId}-00f067aa0ba902b7-01";
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/test/diagnostics");
+        request.Headers.TryAddWithoutValidation("traceparent", traceParent);
+
+        using var response = await client.SendAsync(request);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(traceId, body.RootElement.GetProperty("traceId").GetString());
+    }
+
+    [Fact]
+    public async Task RequestWithInvalidTraceContext_ContinuesWithGeneratedTraceId()
+    {
+        const string invalidTraceParent = "client-value-is-not-w3c-trace-context";
+        using var client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/test/diagnostics");
+        request.Headers.TryAddWithoutValidation("traceparent", invalidTraceParent);
+
+        using var response = await client.SendAsync(request);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var traceId = body.RootElement.GetProperty("traceId").GetString();
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Matches("^[0-9a-f]{32}$", traceId);
+        Assert.NotEqual(invalidTraceParent, traceId);
+    }
+
+    [Fact]
+    public async Task UnhandledException_IsLoggedWithExceptionDetails()
+    {
+        const string traceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        var loggerProvider = new CapturingLoggerProvider();
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureLogging(logging => logging.AddProvider(loggerProvider)));
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/test/exception");
+        request.Headers.TryAddWithoutValidation("traceparent", $"00-{traceId}-00f067aa0ba902b7-01");
+
+        using var response = await client.SendAsync(request);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal(System.Net.HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal(traceId, problem.RootElement.GetProperty("traceId").GetString());
         var entry = Assert.Single(loggerProvider.Entries, entry => entry.Exception is not null);
         Assert.Equal(LogLevel.Error, entry.Level);
         Assert.IsType<InvalidOperationException>(entry.Exception);
         Assert.Equal("Sensitive exception detail.", entry.Exception.Message);
+        Assert.Contains(entry.Scopes, scope => scope.Contains($"TraceId={traceId}", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -144,18 +202,37 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
                         return;
                     }
 
+                    if (context.Request.Path == "/test/diagnostics")
+                    {
+                        context.RequestServices
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("RequestDiagnosticsTest")
+                            .LogInformation("Request diagnostic context");
+                        await context.Response.WriteAsJsonAsync(new
+                        {
+                            traceId = Activity.Current?.TraceId.ToString(),
+                            context.TraceIdentifier
+                        });
+                        return;
+                    }
+
                     await nextMiddleware(context);
                 });
             };
     }
 
-    private sealed class CapturingLoggerProvider : ILoggerProvider
+    private sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope
     {
         private readonly ConcurrentQueue<CapturedLogEntry> _entries = new();
+        private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();
 
         public IReadOnlyCollection<CapturedLogEntry> Entries => _entries.ToArray();
 
-        public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, _entries);
+        public ILogger CreateLogger(string categoryName) =>
+            new CapturingLogger(categoryName, _entries, () => _scopeProvider);
+
+        public void SetScopeProvider(IExternalScopeProvider scopeProvider) =>
+            _scopeProvider = scopeProvider;
 
         public void Dispose()
         {
@@ -163,7 +240,8 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
 
         private sealed class CapturingLogger(
             string categoryName,
-            ConcurrentQueue<CapturedLogEntry> entries) : ILogger
+            ConcurrentQueue<CapturedLogEntry> entries,
+            Func<IExternalScopeProvider> scopeProvider) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -176,11 +254,25 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
                 Exception? exception,
                 Func<TState, Exception?, string> formatter)
             {
+                var scopes = new List<string>();
+                scopeProvider().ForEachScope(static (scope, state) =>
+                {
+                    if (scope is IEnumerable<KeyValuePair<string, object?>> properties)
+                    {
+                        state.AddRange(properties.Select(property => $"{property.Key}={property.Value}"));
+                    }
+                    else if (scope is not null)
+                    {
+                        state.Add(scope.ToString() ?? string.Empty);
+                    }
+                }, scopes);
+
                 entries.Enqueue(new CapturedLogEntry(
                     categoryName,
                     logLevel,
                     formatter(state, exception),
-                    exception));
+                    exception,
+                    scopes));
             }
         }
     }
@@ -189,7 +281,8 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         string Category,
         LogLevel Level,
         string Message,
-        Exception? Exception);
+        Exception? Exception,
+        IReadOnlyList<string> Scopes);
 
     private sealed class IsolatedEnvironmentVariablesConfigurationSource(
         IEnumerable<KeyValuePair<string, string?>> variables) : IConfigurationSource
