@@ -1,8 +1,10 @@
 {
   "version": 2,
-  "dgSpecHash": "B96qYoR7sag=",
+  "dgSpecHash": "R7u3F8x89Ws=",
   "success": true,
   "projectFilePath": "/home/runner/work/Kokishin/Kokishin/backend/src/Kokishin.Application/Kokishin.Application.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "/home/runner/.nuget/packages/microsoft.extensions.dependencyinjection.abstractions/10.0.13/microsoft.extensions.dependencyinjection.abstractions.10.0.13.nupkg.sha512"
+  ],
   "logs": []
 }

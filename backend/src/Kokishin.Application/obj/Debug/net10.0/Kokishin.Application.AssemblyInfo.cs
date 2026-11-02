@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Kokishin.Application")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+82c32f790338b0dc286f8a79e7e6c75677845e8e")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bf70e6eefd5041084c728a57cf23ab6d486a99da")]
 [assembly: System.Reflection.AssemblyProductAttribute("Kokishin.Application")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Kokishin.Application")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
