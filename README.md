@@ -107,6 +107,27 @@ journal files are local development data and are ignored by Git. While the API
 is running, check the configured database with
 `curl --fail http://localhost:5108/health/database`.
 
+## API error responses
+
+The API returns errors using ASP.NET Core Problem Details (`application/problem+json`).
+Responses include the HTTP `status`, a safe `title`, and a `traceId` when request
+diagnostic information is available. Unexpected server errors use a generic
+`detail`; internal exception messages and stack traces are not returned.
+Validation failures use status `400` and include an `errors` object keyed by
+field, while other unhandled HTTP error statuses use their corresponding status.
+
+For example, an unexpected server error has this shape:
+
+```json
+{
+  "type": "about:blank",
+  "title": "An unexpected error occurred.",
+  "status": 500,
+  "detail": "The server encountered an unexpected error.",
+  "traceId": "<request-trace-id>"
+}
+```
+
 ## Project documentation
 
 Start with [`docs/README.md`](docs/README.md) for the documentation index.
