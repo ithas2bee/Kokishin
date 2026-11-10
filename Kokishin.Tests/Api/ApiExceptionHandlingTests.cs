@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
+using Kokishin.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -169,8 +171,17 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
     }
 
     [Fact]
-    public async Task DatabaseHealthCheck_RemainsAvailable()
+    public async Task DatabaseHealthCheck_UsesIsolatedTestConfigurationAndRemainsAvailable()
     {
+        Assert.Equal("Production", _factory.Services.GetRequiredService<IWebHostEnvironment>().EnvironmentName);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<KokishinDbContext>();
+
+            Assert.Equal("Data Source=:memory:", dbContext.Database.GetConnectionString());
+        }
+
         using var client = _factory.CreateClient();
 
         using var response = await client.GetAsync("/health/database");
