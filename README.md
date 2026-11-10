@@ -144,6 +144,14 @@ Core generates the request Activity context. Invalid trace headers do not stop
 request processing, and untrusted header contents are not used as diagnostic
 identifiers.
 
+## OpenAPI
+
+The API generates an OpenAPI document from its registered endpoints. It is
+available in Development at `/openapi/v1.json`; production exposure is disabled
+by default and can be explicitly enabled with `OpenApi:ExposeInProduction=true`.
+See the [OpenAPI guide](docs/openapi.md) for access details, the current API
+contract, and verification instructions.
+
 ## Application logging
 
 The API uses the built-in `Microsoft.Extensions.Logging` abstractions and the
