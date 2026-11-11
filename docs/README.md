@@ -17,6 +17,7 @@ This directory contains the product goals, requirements, architecture notes, dia
 ## Development
 
 - [Backend testing conventions](testing-conventions.md)
+- [OpenAPI](openapi.md)
 
 ## UML and data model
 
