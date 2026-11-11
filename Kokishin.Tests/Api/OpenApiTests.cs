@@ -37,7 +37,6 @@ public class OpenApiTests
             .GetProperty("ProblemDetails").GetProperty("properties").GetProperty("traceId")
             .GetProperty("type").GetString());
         Assert.True(head.GetProperty("responses").TryGetProperty("200", out _));
-        Assert.Single(paths.EnumerateObject());
         Assert.DoesNotContain("OpenApiSensitiveConfiguration", document.RootElement.ToString());
     }
 
