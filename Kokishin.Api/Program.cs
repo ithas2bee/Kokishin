@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using Kokishin.Application;
+using Kokishin.Api;
 using Kokishin.Infrastructure;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
@@ -8,6 +11,13 @@ using Microsoft.OpenApi;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+var authenticationSettings = AuthentikAuthenticationSettings.Read(builder.Configuration, builder.Environment);
+builder.Services.AddAuthentication();
+builder.Services.AddAuthorization();
+if (authenticationSettings is not null)
+{
+    builder.Services.AddAuthentikAuthentication(authenticationSettings);
+}
 builder.Services.AddOpenApi(options =>
     options.AddSchemaTransformer((schema, context, _) =>
     {
@@ -46,6 +56,19 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseAuthentication();
+app.UseAuthorization();
+
+if (authenticationSettings is not null)
+{
+    app.MapGet("/auth/login", (HttpContext context) =>
+        Results.Challenge(
+            new AuthenticationProperties { RedirectUri = "/" },
+            [OpenIdConnectDefaults.AuthenticationScheme]))
+        .AllowAnonymous()
+        .ExcludeFromDescription();
+}
+
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
         HealthCheckService healthCheckService,
         HttpContext context) =>

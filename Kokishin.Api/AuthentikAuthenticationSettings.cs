@@ -1,0 +1,65 @@
+namespace Kokishin.Api;
+
+internal sealed record AuthentikAuthenticationSettings(
+    Uri Authority,
+    string Audience,
+    string ClientId,
+    string ClientSecret,
+    Uri CallbackUrl)
+{
+    public static AuthentikAuthenticationSettings? Read(
+        IConfiguration configuration,
+        IHostEnvironment environment)
+    {
+        var section = configuration.GetSection("Authentication");
+        var values = new Dictionary<string, string?>
+        {
+            ["Authentication:Authority"] = section["Authority"],
+            ["Authentication:Audience"] = section["Audience"],
+            ["Authentication:ClientId"] = section["ClientId"],
+            ["Authentication:ClientSecret"] = section["ClientSecret"],
+            ["Authentication:CallbackUrl"] = section["CallbackUrl"]
+        };
+
+        if (environment.IsDevelopment() && values.Values.All(string.IsNullOrWhiteSpace))
+        {
+            return null;
+        }
+
+        var missingSettings = values
+            .Where(setting => string.IsNullOrWhiteSpace(setting.Value))
+            .Select(setting => setting.Key)
+            .ToArray();
+        if (missingSettings.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Missing required authentication configuration: {string.Join(", ", missingSettings)}.");
+        }
+
+        var authority = ParseHttpsUri(values["Authentication:Authority"]!, "Authentication:Authority");
+        var callbackUrl = ParseHttpsUri(values["Authentication:CallbackUrl"]!, "Authentication:CallbackUrl");
+        if (!string.IsNullOrEmpty(callbackUrl.Query) || !string.IsNullOrEmpty(callbackUrl.Fragment))
+        {
+            throw new InvalidOperationException(
+                "Authentication:CallbackUrl must not include a query string or fragment.");
+        }
+
+        return new AuthentikAuthenticationSettings(
+            authority,
+            values["Authentication:Audience"]!,
+            values["Authentication:ClientId"]!,
+            values["Authentication:ClientSecret"]!,
+            callbackUrl);
+    }
+
+    private static Uri ParseHttpsUri(string value, string settingName)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
+        {
+            throw new InvalidOperationException($"{settingName} must be an absolute HTTPS URL.");
+        }
+
+        return uri;
+    }
+}
