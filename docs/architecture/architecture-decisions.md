@@ -41,3 +41,19 @@ This file records architectural decisions and their rationale. Add a dated entry
 **Decision:** Use Entity Framework Core with SQLite for the current persistence foundation. The provider configuration, context, and initial empty baseline migration live in Infrastructure.
 
 **Reasoning:** SQLite keeps local development self-contained without a separately managed database service. A deployment that requires a server database or greater concurrency can replace the provider when supported by a defined use case.
+
+## AD-006: Authentication architecture
+
+**Status:** Accepted
+
+**Decision:** Use a self-hosted OIDC provider with a same-origin API/BFF browser
+session and Authorization Code with PKCE for future native clients. Map
+provider identities to internal Kokishin user IDs and keep authorization in the
+application.
+
+**Reasoning:** This uses a standard identity protocol across the planned web
+client and possible mobile clients without making Kokishin responsible for
+password storage and recovery. The tradeoff is operating a security-critical
+identity service in the home-hosted production environment. See the
+[authentication decision record](../decisions/AD-006-authentication.md) for
+alternatives, lifecycle, identity mapping, and operational requirements.
