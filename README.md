@@ -43,7 +43,8 @@ Open [`Kokishin.sln`](Kokishin.sln) from the repository root in Visual Studio.
 
 ## Build and run
 
-Run these commands from the repository root:
+Install the .NET 10 SDK, then run these commands from the repository root to
+restore, build, test, and start the API:
 
 ```sh
 dotnet restore Kokishin.sln
