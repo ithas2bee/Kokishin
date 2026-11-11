@@ -22,10 +22,9 @@ responsibilities rather than assumed cloud services.
 
 ## Decision
 
-Use a separately operated, self-hosted identity provider that supports
-OpenID Connect (OIDC) and OAuth 2.0. Select the specific provider in a later
-deployment story; this decision establishes the protocol and client behavior,
-not a provider or integration.
+Use Authentik as the separately operated, self-hosted identity provider. It
+supports the selected OpenID Connect (OIDC) and OAuth 2.0 protocol and client
+behavior described by this decision.
 
 - **Browser:** Use the API as a same-origin backend-for-frontend (BFF) and
   confidential OIDC client with Authorization Code and PKCE. Keep provider
@@ -90,13 +89,32 @@ sequenceDiagram
     A->>A: Validate token and map identity to Kokishin user
 ```
 
+### API integration
+
+The API uses ASP.NET Core OpenID Connect and bearer authentication handlers.
+The confidential web client uses Authorization Code with PKCE and stores its
+provider tokens in a protected server-side ticket; the browser receives only an
+opaque secure, HTTP-only cookie. Cookie-authenticated state-changing requests
+require an antiforgery request token. Native bearer tokens use OIDC discovery
+and signing keys and are validated for issuer, audience, signature, and
+lifetime. The API maps the validated `(issuer, subject)` pair to a stable,
+deterministic internal Kokishin identifier and does not use email or
+provider-specific subject values as application user IDs.
+
+The current session ticket store is in-process memory, so a restart invalidates
+browser sessions and multiple API instances do not share them. Deployments
+requiring persistence or multiple instances must supply a shared protected
+ticket store and persist Data Protection keys. This integration does not
+provision accounts or grant roles; application account provisioning and
+authorization remain server-controlled.
+
 ## Alternatives considered
 
 | Approach | Benefits | Reasons not selected |
 | --- | --- | --- |
 | Kokishin-managed passwords with ASP.NET Core Identity and cookies | Integrates naturally with ASP.NET Core and is straightforward for a browser-only MVP. | Kokishin would own password security, recovery email, MFA, session management, and account-security operations. Native clients would still need a separately designed token protocol and lifecycle. |
 | Managed third-party OIDC provider | Reduces identity-service operations and provides established account security and recovery capabilities. | Adds a production SaaS, availability, cost, and data-processing dependency that does not fit the current home-hosted/no-provider assumption. Reconsider if operating a self-hosted provider is not sustainable. |
-| Self-hosted OIDC provider (selected) | Standard client and API protocols support the browser now and native clients later; credentials and recovery remain outside Kokishin's domain and database. | Requires operating and backing up another security-critical service and its email/configuration dependencies. Provider-specific setup remains to be selected and tested. |
+| Authentik (selected self-hosted OIDC provider) | Standard client and API protocols support the browser now and native clients later; credentials and recovery remain outside Kokishin's domain and database. | Requires operating and backing up another security-critical service and its email/configuration dependencies. |
 | API-minted bearer tokens without an OIDC authority | Gives Kokishin direct control over client token behavior. | Makes Kokishin responsible for secure credential handling, token issuance, refresh/revocation, and recovery while creating a custom identity protocol. |
 
 ## Consequences and implementation guidance

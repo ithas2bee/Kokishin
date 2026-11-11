@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
@@ -16,6 +18,7 @@ internal static class AuthentikAuthenticationExtensions
     private const string DefaultScheme = "Kokishin";
     private const string CookieScheme = "Kokishin.Cookie";
     private const string BearerScheme = "Kokishin.Bearer";
+    private const string SessionCookieName = "__Host-Kokishin.Session";
     private const string SessionStartedAt = "kokishin:session_started_at";
 
     private static readonly Guid UserIdNamespace = Guid.Parse("47fbe87b-685f-49d4-a78b-4533d1bf164d");
@@ -26,6 +29,14 @@ internal static class AuthentikAuthenticationExtensions
     {
         services.AddMemoryCache();
         services.AddDataProtection();
+        services.AddAntiforgery(options =>
+        {
+            options.HeaderName = "X-XSRF-TOKEN";
+            options.Cookie.Name = "__Host-Kokishin.Antiforgery";
+            options.Cookie.Path = "/";
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.Strict;
+        });
         services.AddSingleton<ITicketStore, ProtectedMemoryTicketStore>();
         services.AddAuthentication(options =>
             {
@@ -43,7 +54,7 @@ internal static class AuthentikAuthenticationExtensions
             })
             .AddCookie(CookieScheme, options =>
             {
-                options.Cookie.Name = "__Host-Kokishin.Session";
+                options.Cookie.Name = SessionCookieName;
                 options.Cookie.Path = "/";
                 options.Cookie.HttpOnly = true;
                 options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
@@ -93,7 +104,9 @@ internal static class AuthentikAuthenticationExtensions
                 options.TokenValidationParameters = CreateTokenValidationParameters(
                     settings.Authority.AbsoluteUri,
                     settings.ClientId);
+                options.CorrelationCookie.HttpOnly = true;
                 options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.Always;
+                options.NonceCookie.HttpOnly = true;
                 options.NonceCookie.SecurePolicy = CookieSecurePolicy.Always;
                 options.Events = new OpenIdConnectEvents
                 {
@@ -161,6 +174,35 @@ internal static class AuthentikAuthenticationExtensions
         return services;
     }
 
+    public static IApplicationBuilder UseCookieCsrfProtection(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            var method = context.Request.Method;
+            var isStateChanging = method is not "GET" and not "HEAD" and not "OPTIONS" and not "TRACE";
+            var hasBearerToken = context.Request.Headers.Authorization.ToString()
+                .StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+            if (isStateChanging &&
+                !hasBearerToken &&
+                context.Request.Cookies.ContainsKey(SessionCookieName) &&
+                !await context.RequestServices.GetRequiredService<IAntiforgery>().IsRequestValidAsync(context))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.RequestServices.GetRequiredService<IProblemDetailsService>()
+                    .WriteAsync(new ProblemDetailsContext
+                    {
+                        HttpContext = context,
+                        ProblemDetails = new ProblemDetails
+                        {
+                            Status = StatusCodes.Status400BadRequest,
+                            Title = "The antiforgery token is missing or invalid."
+                        }
+                    });
+                return;
+            }
+
+            await next();
+        });
+
     private static TokenValidationParameters CreateTokenValidationParameters(string issuer, string audience) =>
         new()
         {
@@ -209,8 +251,8 @@ internal static class AuthentikAuthenticationExtensions
         var input = new byte[namespaceBytes.Length + identityBytes.Length];
         namespaceBytes.CopyTo(input, 0);
         identityBytes.CopyTo(input, namespaceBytes.Length);
-        var hash = SHA1.HashData(input);
-        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        var hash = SHA256.HashData(input);
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x80);
         hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
         return new Guid(hash.AsSpan(0, 16), bigEndian: true);
     }

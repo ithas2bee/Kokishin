@@ -71,6 +71,11 @@ public class OpenApiTests
         {
             builder.UseEnvironment(environment);
             builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=OpenApiSensitiveConfiguration");
+            builder.UseSetting("Authentication:Authority", "https://authentik.example.test/application/o/kokishin/");
+            builder.UseSetting("Authentication:Audience", "kokishin-api");
+            builder.UseSetting("Authentication:ClientId", "kokishin-web");
+            builder.UseSetting("Authentication:ClientSecret", "test-client-secret");
+            builder.UseSetting("Authentication:CallbackUrl", "https://api.example.test/signin-oidc");
             if (exposeInProduction is not null)
             {
                 builder.UseSetting("OpenApi:ExposeInProduction", exposeInProduction.Value.ToString());

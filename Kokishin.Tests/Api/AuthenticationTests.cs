@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,7 +29,7 @@ public class AuthenticationTests
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
-        var token = authority.CreateToken("provider-subject");
+        var token = authority.CreateToken("provider-subject", nameIdentifier: "provider-supplied-id");
 
         using var firstResponse = await SendTokenAsync(client, token);
         var firstBody = await firstResponse.Content.ReadAsStringAsync();
@@ -41,6 +42,7 @@ public class AuthenticationTests
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
         Assert.Equal("provider-subject", firstIdentity.RootElement.GetProperty("subject").GetString());
         Assert.NotEqual("provider-subject", internalUserId);
+        Assert.NotEqual("provider-supplied-id", internalUserId);
         Assert.True(Guid.TryParse(internalUserId, out _));
         Assert.Equal(internalUserId, secondIdentity.RootElement.GetProperty("userId").GetString());
     }
@@ -72,6 +74,7 @@ public class AuthenticationTests
         var invalidTokens = new[]
         {
             "not-a-jwt",
+            authority.CreateToken(null),
             authority.CreateToken("expired", expires: DateTime.UtcNow.AddMinutes(-10)),
             authority.CreateToken("wrong-issuer", issuer: "https://untrusted.example.test/"),
             authority.CreateToken("wrong-audience", audience: "another-api"),
@@ -119,6 +122,64 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task InvalidOidcCallbackState_ReturnsUnauthenticatedProblemDetails()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/signin-oidc?code=invalid&state=invalid");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.DoesNotContain("invalid", body);
+    }
+
+    [Fact]
+    public async Task CookieSession_IsOpaqueAndRequiresAntiforgeryForStateChanges()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var signInResponse = await client.GetAsync("/test/sign-in");
+        var sessionCookie = GetCookie(signInResponse, "__Host-Kokishin.Session");
+
+        using var csrfRequest = new HttpRequestMessage(HttpMethod.Get, "/auth/csrf");
+        csrfRequest.Headers.TryAddWithoutValidation("Cookie", sessionCookie);
+        using var csrfResponse = await client.SendAsync(csrfRequest);
+        var csrfResponseBody = await csrfResponse.Content.ReadAsStringAsync();
+        Assert.True(
+            csrfResponse.StatusCode == HttpStatusCode.OK,
+            csrfResponseBody);
+        using var csrfBody = JsonDocument.Parse(csrfResponseBody);
+        var requestToken = csrfBody.RootElement.GetProperty("requestToken").GetString();
+        var antiforgeryCookie = GetCookie(csrfResponse, "__Host-Kokishin.Antiforgery");
+        var cookies = $"{sessionCookie}; {antiforgeryCookie}";
+
+        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Post, "/test/state-change");
+        rejectedRequest.Headers.TryAddWithoutValidation("Cookie", cookies);
+        using var rejectedResponse = await client.SendAsync(rejectedRequest);
+        var rejectedBody = await rejectedResponse.Content.ReadAsStringAsync();
+
+        using var acceptedRequest = new HttpRequestMessage(HttpMethod.Post, "/test/state-change");
+        acceptedRequest.Headers.TryAddWithoutValidation("Cookie", cookies);
+        acceptedRequest.Headers.TryAddWithoutValidation("X-XSRF-TOKEN", requestToken);
+        using var acceptedResponse = await client.SendAsync(acceptedRequest);
+
+        Assert.Equal(HttpStatusCode.OK, signInResponse.StatusCode);
+        Assert.DoesNotContain("provider-access-token", sessionCookie);
+        Assert.Equal(HttpStatusCode.OK, csrfResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedResponse.StatusCode);
+        Assert.Equal("application/problem+json", rejectedResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(HttpStatusCode.OK, acceptedResponse.StatusCode);
+        Assert.Equal("state changed", await acceptedResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public void ProductionWithoutAuthenticationConfiguration_FailsAtStartup()
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -139,6 +200,11 @@ public class AuthenticationTests
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
     }
+
+    private static string GetCookie(HttpResponseMessage response, string name) =>
+        response.Headers.GetValues("Set-Cookie")
+            .Select(cookie => cookie.Split(';', 2)[0])
+            .Single(cookie => cookie.StartsWith($"{name}=", StringComparison.Ordinal));
 
     private static WebApplicationFactory<Program> CreateFactory(TestOidcAuthority authority) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -170,6 +236,30 @@ public class AuthenticationTests
                 {
                     if (context.Request.Path != "/test/identity")
                     {
+                        if (context.Request.Path == "/test/sign-in")
+                        {
+                            var properties = new AuthenticationProperties();
+                            properties.Items["kokishin:session_started_at"] =
+                                DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(
+                                    System.Globalization.CultureInfo.InvariantCulture);
+                            await context.SignInAsync(
+                                "Kokishin.Cookie",
+                                new ClaimsPrincipal(new ClaimsIdentity(
+                                    [
+                                        new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
+                                        new Claim("access_token", "provider-access-token")
+                                    ],
+                                    "test")),
+                                properties);
+                            return;
+                        }
+
+                        if (context.Request.Path == "/test/state-change")
+                        {
+                            await context.Response.WriteAsync("state changed");
+                            return;
+                        }
+
                         await nextMiddleware();
                         return;
                     }
@@ -202,19 +292,31 @@ public class AuthenticationTests
         private readonly RSA _signingKey = RSA.Create(2048);
 
         public string CreateToken(
-            string subject,
+            string? subject,
             string? issuer = null,
             string? audience = null,
             DateTime? expires = null,
-            RSA? signingKey = null)
+            RSA? signingKey = null,
+            string? nameIdentifier = null)
         {
             var credentials = new SigningCredentials(
                 new RsaSecurityKey(signingKey ?? _signingKey) { KeyId = KeyId },
                 SecurityAlgorithms.RsaSha256);
+            var claims = new List<Claim>();
+            if (subject is not null)
+            {
+                claims.Add(new Claim("sub", subject));
+            }
+
+            if (nameIdentifier is not null)
+            {
+                claims.Add(new Claim(ClaimTypes.NameIdentifier, nameIdentifier));
+            }
+
             var token = new JwtSecurityToken(
                 issuer ?? Issuer,
                 audience ?? Audience,
-                [new Claim("sub", subject)],
+                claims,
                 notBefore: expires < DateTime.UtcNow
                     ? expires?.AddMinutes(-5)
                     : DateTime.UtcNow.AddSeconds(-10),

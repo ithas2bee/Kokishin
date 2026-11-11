@@ -38,11 +38,6 @@ internal sealed record AuthentikAuthenticationSettings(
 
         var authority = ParseHttpsUri(values["Authentication:Authority"]!, "Authentication:Authority");
         var callbackUrl = ParseHttpsUri(values["Authentication:CallbackUrl"]!, "Authentication:CallbackUrl");
-        if (!string.IsNullOrEmpty(callbackUrl.Query) || !string.IsNullOrEmpty(callbackUrl.Fragment))
-        {
-            throw new InvalidOperationException(
-                "Authentication:CallbackUrl must not include a query string or fragment.");
-        }
 
         return new AuthentikAuthenticationSettings(
             authority,
@@ -55,9 +50,13 @@ internal sealed record AuthentikAuthenticationSettings(
     private static Uri ParseHttpsUri(string value, string settingName)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttps)
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment))
         {
-            throw new InvalidOperationException($"{settingName} must be an absolute HTTPS URL.");
+            throw new InvalidOperationException(
+                $"{settingName} must be an absolute HTTPS URL without user information, query, or fragment.");
         }
 
         return uri;

@@ -4,6 +4,7 @@ using Kokishin.Api;
 using Kokishin.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
@@ -58,6 +59,10 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
 app.UseAuthorization();
+if (authenticationSettings is not null)
+{
+    app.UseCookieCsrfProtection();
+}
 
 if (authenticationSettings is not null)
 {
@@ -66,6 +71,11 @@ if (authenticationSettings is not null)
             new AuthenticationProperties { RedirectUri = "/" },
             [OpenIdConnectDefaults.AuthenticationScheme]))
         .AllowAnonymous()
+        .ExcludeFromDescription();
+
+    app.MapGet("/auth/csrf", (HttpContext context, IAntiforgery antiforgery) =>
+        Results.Ok(new { requestToken = antiforgery.GetAndStoreTokens(context).RequestToken }))
+        .RequireAuthorization()
         .ExcludeFromDescription();
 }
 
