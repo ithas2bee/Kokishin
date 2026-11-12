@@ -22,6 +22,9 @@ public sealed class KokishinDbContext(DbContextOptions<KokishinDbContext> option
             entity.Property(account => account.Id).ValueGeneratedNever();
             entity.Property(account => account.Issuer).IsRequired();
             entity.Property(account => account.Subject).IsRequired();
+            entity.Property(account => account.Role)
+                .HasConversion<string>()
+                .IsRequired();
             entity.HasIndex(account => new { account.Issuer, account.Subject }).IsUnique();
         });
 

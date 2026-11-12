@@ -30,7 +30,7 @@ public sealed class SqliteProfileStoreTests : IAsyncDisposable
     [Fact]
     public async Task UpdateOwnProfileAsync_ProfileExists_PersistsAndRetrievesProfile()
     {
-        var account = new Account("https://identity.example.test/", "profile-owner");
+        var account = new Account("https://identity.example.test/", "profile-owner", AccountRole.Learner);
         await using (var dbContext = await CreateDbContextAsync())
         {
             dbContext.Accounts.Add(account);
@@ -50,7 +50,7 @@ public sealed class SqliteProfileStoreTests : IAsyncDisposable
     [Fact]
     public async Task UpdateOwnProfileAsync_RepeatedUpdates_StoresOneProfilePerAccount()
     {
-        var account = new Account("https://identity.example.test/", "profile-owner");
+        var account = new Account("https://identity.example.test/", "profile-owner", AccountRole.Learner);
         await using (var dbContext = await CreateDbContextAsync())
         {
             dbContext.Accounts.Add(account);

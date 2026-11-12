@@ -1,3 +1,5 @@
+using Kokishin.Domain.Accounts;
+
 namespace Kokishin.Application.Accounts;
 
 public interface IAccountLifecycleService
@@ -5,6 +7,7 @@ public interface IAccountLifecycleService
     Task<AccountProvisioningResult> ProvisionVerifiedIdentityAsync(
         string issuer,
         string subject,
+        AccountRole role,
         CancellationToken cancellationToken = default);
 
     Task ActivateAsync(Guid accountId, CancellationToken cancellationToken = default);
