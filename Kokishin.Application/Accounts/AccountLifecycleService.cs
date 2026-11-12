@@ -34,6 +34,9 @@ public sealed class AccountLifecycleService(IAccountStore accountStore) : IAccou
     public async Task<bool> IsActiveAsync(Guid accountId, CancellationToken cancellationToken = default) =>
         (await accountStore.FindByIdAsync(accountId, cancellationToken))?.Status == AccountStatus.Active;
 
+    public async Task<AccountRole?> GetRoleAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+        (await accountStore.FindByIdAsync(accountId, cancellationToken))?.Role;
+
     private async Task<Account> FindRequiredAccountAsync(Guid accountId, CancellationToken cancellationToken) =>
         await accountStore.FindByIdAsync(accountId, cancellationToken)
         ?? throw new KeyNotFoundException($"Account '{accountId}' was not found.");

@@ -4,6 +4,8 @@ using Kokishin.Application;
 using Kokishin.Api;
 using Kokishin.Application.Profiles;
 using Kokishin.Infrastructure;
+using Kokishin.Domain.Accounts;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
@@ -29,7 +31,16 @@ if (dataProtectionSettings is not null)
     builder.Services.AddSingleton(dataProtectionSettings.KeyEncryptionCertificate);
 }
 builder.Services.AddAuthentication();
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.Instructor, policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new AccountRoleRequirement(AccountRole.Instructor)));
+    options.AddPolicy(AuthorizationPolicies.Learner, policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new AccountRoleRequirement(AccountRole.Learner)));
+});
+builder.Services.AddScoped<IAuthorizationHandler, AccountRoleAuthorizationHandler>();
 if (authenticationSettings is not null)
 {
     builder.Services.AddAuthentikAuthentication(authenticationSettings);
