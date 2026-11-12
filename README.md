@@ -144,14 +144,19 @@ derived from the validated `(issuer, subject)` pair; it is not the provider
 subject or email. This mapping does not provision an application account or
 grant roles or permissions.
 
+The persistent account model uses the same stable internal ID and stores the
+issuer and subject as a unique pair. It does not store email or provider-managed
+credentials; account provisioning remains outside the authentication flow.
+
 ## Persistence and migrations
 
 Persistence uses Entity Framework Core 10 with SQLite. The context and provider
 configuration live in `Kokishin.Infrastructure`; the API does not create or
 migrate schemas on startup. The existing initial migration is an empty baseline
-that creates only EF Core's migration metadata tables.
+that creates only EF Core's migration metadata tables. The `Accounts` table
+stores the stable account ID and its unique issuer/subject pair.
 
-Install the EF command-line tool once, then apply the existing migrations:
+Install the EF command-line tool once, then apply all migrations:
 
 ```sh
 dotnet tool install --global dotnet-ef --version 10.0.13

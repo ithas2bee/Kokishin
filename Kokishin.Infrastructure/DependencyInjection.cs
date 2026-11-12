@@ -1,4 +1,6 @@
+using Kokishin.Application.Accounts;
 using Kokishin.Infrastructure.Persistence;
+using Kokishin.Infrastructure.Persistence.Accounts;
 using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
@@ -40,6 +42,7 @@ public static class DependencyInjection
         }
 
         services.AddDbContextFactory<KokishinDbContext>(options => options.UseSqlite(connectionString));
+        services.AddSingleton<IAccountStore, SqliteAccountStore>();
         services.AddSingleton<IDurableSessionTicketStore, SqliteSessionTicketStore>();
         services.AddHealthChecks().AddDbContextCheck<KokishinDbContext>("database");
 
