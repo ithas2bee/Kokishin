@@ -8,6 +8,7 @@ classDiagram
         +Id
         +DisplayName
         +Email
+        +Role
     }
     class Course {
         +Id
@@ -17,7 +18,6 @@ classDiagram
     }
     class Enrollment {
         +Id
-        +Role
         +Status
     }
     class Module {
@@ -70,4 +70,6 @@ classDiagram
 ## Notes
 
 - This is a conceptual model, not a final database schema.
+- `User.Role` is the account-level instructor/learner role; enrollment does not
+  assign roles or represent course ownership.
 - Authentication details, file storage, discussion threads, rubrics, quizzes, and audit fields need further specification before implementation.

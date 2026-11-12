@@ -11,7 +11,7 @@ public sealed class Account
     {
     }
 
-    public Account(string issuer, string subject)
+    public Account(string issuer, string subject, AccountRole role)
     {
         if (string.IsNullOrWhiteSpace(issuer))
         {
@@ -23,9 +23,15 @@ public sealed class Account
             throw new ArgumentException("Subject is required.", nameof(subject));
         }
 
+        if (!Enum.IsDefined(role))
+        {
+            throw new ArgumentOutOfRangeException(nameof(role), role, "The account role is not supported.");
+        }
+
         Id = CreateId(issuer, subject);
         Issuer = issuer;
         Subject = subject;
+        Role = role;
         Status = AccountStatus.Inactive;
     }
 
@@ -34,6 +40,8 @@ public sealed class Account
     public string Issuer { get; private set; } = null!;
 
     public string Subject { get; private set; } = null!;
+
+    public AccountRole Role { get; private set; }
 
     public AccountStatus Status { get; private set; }
 

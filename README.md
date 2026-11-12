@@ -152,15 +152,24 @@ Only a verified `(issuer, subject)` identity can be provisioned, new accounts
 start inactive, and sign-in neither provisions accounts nor enables inactive
 ones. Email is never used to match or provision an account.
 
+Each account has exactly one role: `Instructor` or `Learner`; an account cannot
+hold both. Role values are stored by their stable names and assigned only through
+trusted server-side provisioning. OIDC role claims and profile updates do not
+assign or change roles. Repeated provisioning of an existing identity preserves
+its original role. Roles are separate from course ownership and enrollment, and
+there is no administrator role.
+
 ## Persistence and migrations
 
 Persistence uses Entity Framework Core 10 with SQLite. The context and provider
 configuration live in `Kokishin.Infrastructure`; the API does not create or
 migrate schemas on startup. The existing initial migration is an empty baseline
 that creates only EF Core's migration metadata tables. The `Accounts` table
-stores the stable account ID and its unique issuer/subject pair. The `Profiles`
-table stores each account's required display name and optional description,
-using the account ID as a one-to-one foreign key.
+stores the stable account ID, its unique issuer/subject pair, and its role. The
+role is stored as the stable `Instructor` or `Learner` name; the role migration
+assigns existing accounts `Learner`. The `Profiles` table stores each account's
+required display name and optional description, using the account ID as a
+one-to-one foreign key.
 
 Install the EF command-line tool once, then apply all migrations:
 

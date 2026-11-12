@@ -7,6 +7,9 @@ This is the initial requirements baseline. Requirements should be refined into i
 ### Accounts and access
 
 - FR-001: The system shall distinguish instructor and learner permissions.
+- Initial accounts have exactly one of the `Instructor` or `Learner` roles. Only
+  trusted server-side provisioning assigns the role; profile updates cannot
+  change it.
 - FR-002: Users shall only access courses and actions permitted by their role and enrollment.
 
 ### Courses and content

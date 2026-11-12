@@ -60,7 +60,8 @@ public class AuthenticationTests
         var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
         var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
             TestOidcAuthority.Issuer,
-            "inactive-subject");
+            "inactive-subject",
+            AccountRole.Learner);
 
         using var response = await SendTokenAsync(client, authority.CreateToken("inactive-subject"));
 
@@ -119,6 +120,7 @@ public class AuthenticationTests
             {
                 displayName = "Ada",
                 description = "Instructor",
+                role = "Instructor",
                 accountId = Guid.NewGuid(),
                 issuer = "https://attacker.example.test/",
                 subject = "replacement-subject",
@@ -130,7 +132,8 @@ public class AuthenticationTests
         var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
         var secondAccount = await lifecycle.ProvisionVerifiedIdentityAsync(
             TestOidcAuthority.Issuer,
-            "second-provider-subject");
+            "second-provider-subject",
+            AccountRole.Learner);
         await lifecycle.ActivateAsync(secondAccount.Account.Id);
         var secondToken = authority.CreateToken("second-provider-subject");
         using var secondInitialGet = await SendProfileRequestAsync(client, secondToken, HttpMethod.Get);
@@ -158,6 +161,7 @@ public class AuthenticationTests
         Assert.False(firstProfile.RootElement.TryGetProperty("issuer", out _));
         Assert.False(firstProfile.RootElement.TryGetProperty("subject", out _));
         Assert.False(firstProfile.RootElement.TryGetProperty("status", out _));
+        Assert.False(firstProfile.RootElement.TryGetProperty("role", out _));
         Assert.Equal(HttpStatusCode.NotFound, secondInitialGet.StatusCode);
         Assert.Equal(HttpStatusCode.OK, secondUpdate.StatusCode);
         Assert.Equal(HttpStatusCode.OK, firstAfterSecondUpdate.StatusCode);
@@ -165,6 +169,7 @@ public class AuthenticationTests
         Assert.Equal(TestOidcAuthority.Issuer, originalAccount.Issuer);
         Assert.Equal("provider-subject", originalAccount.Subject);
         Assert.Equal(AccountStatus.Active, originalAccount.Status);
+        Assert.Equal(AccountRole.Learner, originalAccount.Role);
     }
 
     [Fact]
@@ -188,7 +193,7 @@ public class AuthenticationTests
     }
 
     private static Guid ActiveAccountId =>
-        new Account(TestOidcAuthority.Issuer, "provider-subject").Id;
+        new Account(TestOidcAuthority.Issuer, "provider-subject", AccountRole.Learner).Id;
 
     private static async Task<HttpResponseMessage> SendProfileRequestAsync(
         HttpClient client,
@@ -497,7 +502,10 @@ public class AuthenticationTests
             dbContext.Database.Migrate();
             if (!dbContext.Accounts.Any(account => account.Id == ActiveAccountId))
             {
-                var account = new Account(TestOidcAuthority.Issuer, "provider-subject");
+                var account = new Account(
+                    TestOidcAuthority.Issuer,
+                    "provider-subject",
+                    AccountRole.Learner);
                 account.Activate();
                 dbContext.Accounts.Add(account);
                 dbContext.SaveChanges();

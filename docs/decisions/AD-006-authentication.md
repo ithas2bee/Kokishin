@@ -46,6 +46,13 @@ behavior described by this decision.
   only through an explicit, verified provisioning flow. Keep instructor/learner
   roles, enrollments, and course permissions under Kokishin's control rather
   than trusting client-supplied role claims.
+- **Initial account roles:** Each account has exactly one role, either
+  `Instructor` or `Learner`; accounts cannot hold both. The role is assigned as
+  an explicit input to trusted server-side account provisioning, not from OIDC
+  role claims or profile updates. Re-provisioning an existing identity does not
+  change its role. Account roles are separate from course ownership and
+  enrollment. Additional roles may be added when required; no administrator role
+  is defined for the initial model.
 - **Credential and account lifecycle:** The provider owns primary credentials,
   password policy, MFA policy, verification, and account recovery. Recovery
   uses a verified address and a short-lived, single-use reset flow with

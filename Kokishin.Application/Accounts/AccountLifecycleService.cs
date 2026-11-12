@@ -7,9 +7,10 @@ public sealed class AccountLifecycleService(IAccountStore accountStore) : IAccou
     public async Task<AccountProvisioningResult> ProvisionVerifiedIdentityAsync(
         string issuer,
         string subject,
+        AccountRole role,
         CancellationToken cancellationToken = default)
     {
-        var account = new Account(issuer, subject);
+        var account = new Account(issuer, subject, role);
         var existing = await accountStore.AddIfAbsentAsync(account, cancellationToken);
         return existing is null
             ? new AccountProvisioningResult(account, AccountProvisioningOutcome.Created)
