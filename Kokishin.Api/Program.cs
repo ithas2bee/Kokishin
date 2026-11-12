@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Security.Claims;
 using Kokishin.Application;
 using Kokishin.Api;
+using Kokishin.Application.Profiles;
 using Kokishin.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -90,6 +92,20 @@ if (authenticationSettings is not null)
         Results.Ok(new { requestToken = antiforgery.GetAndStoreTokens(context).RequestToken }))
         .RequireAuthorization()
         .ExcludeFromDescription();
+
+    app.MapGet("/me/profile", GetOwnProfileAsync)
+        .RequireAuthorization()
+        .WithSummary("Get the authenticated user's profile")
+        .Produces<ProfileResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPut("/me/profile", UpdateOwnProfileAsync)
+        .RequireAuthorization()
+        .WithSummary("Create or update the authenticated user's profile")
+        .Produces<ProfileResponse>()
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -116,5 +132,54 @@ if (app.Environment.IsDevelopment() ||
 }
 
 app.Run();
+
+static async Task<IResult> GetOwnProfileAsync(HttpContext context, IProfileService profileService)
+{
+    if (!TryGetAccountId(context.User, out var accountId))
+    {
+        return Results.Forbid();
+    }
+
+    var profile = await profileService.GetOwnProfileAsync(accountId, context.RequestAborted);
+    return profile is null
+        ? Results.NotFound()
+        : Results.Ok(new ProfileResponse(profile.DisplayName, profile.Description));
+}
+
+static async Task<IResult> UpdateOwnProfileAsync(
+    HttpContext context,
+    UpdateProfileRequest request,
+    IProfileService profileService)
+{
+    if (!TryGetAccountId(context.User, out var accountId))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var profile = await profileService.UpdateOwnProfileAsync(
+            accountId,
+            request.DisplayName,
+            request.Description,
+            context.RequestAborted);
+        return Results.Ok(new ProfileResponse(profile.DisplayName, profile.Description));
+    }
+    catch (ArgumentException exception) when (exception.ParamName is "displayName" or "description")
+    {
+        var field = exception.ParamName!;
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [field] = [exception.Message]
+        });
+    }
+}
+
+static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
+    Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);
+
+internal sealed record UpdateProfileRequest(string DisplayName, string? Description);
+
+internal sealed record ProfileResponse(string DisplayName, string? Description);
 
 public partial class Program;

@@ -158,7 +158,9 @@ Persistence uses Entity Framework Core 10 with SQLite. The context and provider
 configuration live in `Kokishin.Infrastructure`; the API does not create or
 migrate schemas on startup. The existing initial migration is an empty baseline
 that creates only EF Core's migration metadata tables. The `Accounts` table
-stores the stable account ID and its unique issuer/subject pair.
+stores the stable account ID and its unique issuer/subject pair. The `Profiles`
+table stores each account's required display name and optional description,
+using the account ID as a one-to-one foreign key.
 
 Install the EF command-line tool once, then apply all migrations:
 

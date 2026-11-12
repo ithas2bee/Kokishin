@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Net.Http.Json;
 using Kokishin.Application.Accounts;
 using Kokishin.Api;
 using Kokishin.Domain.Accounts;
@@ -84,8 +85,126 @@ public class AuthenticationTests
         Assert.DoesNotContain("client-controlled-user", body);
     }
 
+    [Fact]
+    public async Task ProfileEndpoints_RequireAuthentication()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var getResponse = await client.GetAsync("/me/profile");
+        using var updateResponse = await client.PutAsJsonAsync(
+            "/me/profile",
+            new { displayName = "Ada", description = (string?)null });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, getResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, updateResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ProfileEndpoints_OnlyReadAndUpdateAuthenticatedAccountProfile()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var firstToken = authority.CreateToken(
+            "provider-subject",
+            nameIdentifier: Guid.NewGuid().ToString("D"));
+
+        using var firstUpdate = await SendProfileRequestAsync(
+            client,
+            firstToken,
+            HttpMethod.Put,
+            new
+            {
+                displayName = "Ada",
+                description = "Instructor",
+                accountId = Guid.NewGuid(),
+                issuer = "https://attacker.example.test/",
+                subject = "replacement-subject",
+                status = (int)AccountStatus.Inactive
+            });
+        using var firstGet = await SendProfileRequestAsync(client, firstToken, HttpMethod.Get);
+        using var firstProfile = JsonDocument.Parse(await firstGet.Content.ReadAsStringAsync());
+
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var secondAccount = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "second-provider-subject");
+        await lifecycle.ActivateAsync(secondAccount.Account.Id);
+        var secondToken = authority.CreateToken("second-provider-subject");
+        using var secondInitialGet = await SendProfileRequestAsync(client, secondToken, HttpMethod.Get);
+        using var secondUpdate = await SendProfileRequestAsync(
+            client,
+            secondToken,
+            HttpMethod.Put,
+            new { displayName = "Grace", description = (string?)null });
+        using var firstAfterSecondUpdate = await SendProfileRequestAsync(
+            client,
+            firstToken,
+            HttpMethod.Get);
+        using var firstProfileAfterSecondUpdate =
+            JsonDocument.Parse(await firstAfterSecondUpdate.Content.ReadAsStringAsync());
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider.GetRequiredService<
+            Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+        var originalAccount = await database.Accounts.SingleAsync(account => account.Id == ActiveAccountId);
+
+        Assert.Equal(HttpStatusCode.OK, firstUpdate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, firstGet.StatusCode);
+        Assert.Equal("Ada", firstProfile.RootElement.GetProperty("displayName").GetString());
+        Assert.Equal("Instructor", firstProfile.RootElement.GetProperty("description").GetString());
+        Assert.False(firstProfile.RootElement.TryGetProperty("accountId", out _));
+        Assert.False(firstProfile.RootElement.TryGetProperty("issuer", out _));
+        Assert.False(firstProfile.RootElement.TryGetProperty("subject", out _));
+        Assert.False(firstProfile.RootElement.TryGetProperty("status", out _));
+        Assert.Equal(HttpStatusCode.NotFound, secondInitialGet.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondUpdate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, firstAfterSecondUpdate.StatusCode);
+        Assert.Equal("Ada", firstProfileAfterSecondUpdate.RootElement.GetProperty("displayName").GetString());
+        Assert.Equal(TestOidcAuthority.Issuer, originalAccount.Issuer);
+        Assert.Equal("provider-subject", originalAccount.Subject);
+        Assert.Equal(AccountStatus.Active, originalAccount.Status);
+    }
+
+    [Fact]
+    public async Task ProfileUpdate_InvalidDisplayName_ReturnsValidationProblem()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendProfileRequestAsync(
+            client,
+            authority.CreateToken("provider-subject"),
+            HttpMethod.Put,
+            new { displayName = " ", description = (string?)null });
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "displayName",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
     private static Guid ActiveAccountId =>
         new Account(TestOidcAuthority.Issuer, "provider-subject").Id;
+
+    private static async Task<HttpResponseMessage> SendProfileRequestAsync(
+        HttpClient client,
+        string token,
+        HttpMethod method,
+        object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, "/me/profile");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
+        }
+
+        return await client.SendAsync(request);
+    }
 
     [Fact]
     public async Task InvalidBearerTokens_AreRejected()

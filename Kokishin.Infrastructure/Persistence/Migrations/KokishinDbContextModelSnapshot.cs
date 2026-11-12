@@ -41,6 +41,25 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.ToTable("Accounts", (string)null);
                 });
 
+            modelBuilder.Entity("Kokishin.Domain.Profiles.Profile", b =>
+                {
+                    b.Property<Guid>("AccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AccountId");
+
+                    b.ToTable("Profiles", (string)null);
+                });
+
             modelBuilder.Entity("Kokishin.Infrastructure.Persistence.Sessions.SessionTicketRecord", b =>
                 {
                     b.Property<string>("Key")
@@ -59,6 +78,15 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.HasIndex("ExpiresAtUnixSeconds");
 
                     b.ToTable("SessionTickets", (string)null);
+                });
+
+            modelBuilder.Entity("Kokishin.Domain.Profiles.Profile", b =>
+                {
+                    b.HasOne("Kokishin.Domain.Accounts.Account", null)
+                        .WithOne()
+                        .HasForeignKey("Kokishin.Domain.Profiles.Profile", "AccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }
