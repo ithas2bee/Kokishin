@@ -76,6 +76,7 @@ public class OpenApiTests
             builder.UseSetting("Authentication:ClientId", "kokishin-web");
             builder.UseSetting("Authentication:ClientSecret", "test-client-secret");
             builder.UseSetting("Authentication:CallbackUrl", "https://api.example.test/signin-oidc");
+            TestDataProtectionConfiguration.Configure(builder);
             if (exposeInProduction is not null)
             {
                 builder.UseSetting("OpenApi:ExposeInProduction", exposeInProduction.Value.ToString());

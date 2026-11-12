@@ -241,6 +241,7 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         builder.UseSetting("Authentication:ClientId", "kokishin-web");
         builder.UseSetting("Authentication:ClientSecret", "test-client-secret");
         builder.UseSetting("Authentication:CallbackUrl", "https://api.example.test/signin-oidc");
+        TestDataProtectionConfiguration.Configure(builder);
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope

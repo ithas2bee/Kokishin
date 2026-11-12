@@ -7,8 +7,10 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Kokishin.Api;
@@ -27,8 +29,6 @@ internal static class AuthentikAuthenticationExtensions
         this IServiceCollection services,
         AuthentikAuthenticationSettings settings)
     {
-        services.AddMemoryCache();
-        services.AddDataProtection();
         services.AddAntiforgery(options =>
         {
             options.HeaderName = "X-XSRF-TOKEN";
@@ -37,7 +37,7 @@ internal static class AuthentikAuthenticationExtensions
             options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
             options.Cookie.SameSite = SameSiteMode.Strict;
         });
-        services.AddSingleton<ITicketStore, ProtectedMemoryTicketStore>();
+        services.AddSingleton<ITicketStore, ProtectedSessionTicketStore>();
         services.AddAuthentication(options =>
             {
                 options.DefaultScheme = DefaultScheme;

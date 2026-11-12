@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Protocols;
@@ -194,6 +195,26 @@ public class AuthenticationTests
         Assert.Contains("Authentication:ClientSecret", exception.Message);
     }
 
+    [Fact]
+    public void ProductionWithAuthenticationButMissingPersistentDataProtectionSettings_FailsAtStartup()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+            builder.UseSetting("Authentication:Authority", TestOidcAuthority.Issuer);
+            builder.UseSetting("Authentication:Audience", TestOidcAuthority.Audience);
+            builder.UseSetting("Authentication:ClientId", TestOidcAuthority.ClientId);
+            builder.UseSetting("Authentication:ClientSecret", TestOidcAuthority.ClientSecret);
+            builder.UseSetting("Authentication:CallbackUrl", TestOidcAuthority.CallbackUrl);
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("DataProtection:KeysPath", exception.Message);
+        Assert.Contains("DataProtection:CertificatePassword", exception.Message);
+    }
+
     private static async Task<HttpResponseMessage> SendTokenAsync(HttpClient client, string token)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity");
@@ -206,25 +227,105 @@ public class AuthenticationTests
             .Select(cookie => cookie.Split(';', 2)[0])
             .Single(cookie => cookie.StartsWith($"{name}=", StringComparison.Ordinal));
 
-    private static WebApplicationFactory<Program> CreateFactory(TestOidcAuthority authority) =>
-        new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+    private static AuthenticationTestFactory CreateFactory(TestOidcAuthority authority) =>
+        new AuthenticationTestFactory(authority);
+
+    [Fact]
+    public async Task CookieSession_SurvivesApiHostRecreation()
+    {
+        using var authority = new TestOidcAuthority();
+        var databasePath = Path.Combine(Path.GetTempPath(), $"kokishin-sessions-{Guid.NewGuid():N}.db");
+        try
+        {
+            string sessionCookie;
+            using (var firstFactory = new AuthenticationTestFactory(
+                       authority,
+                       databasePath,
+                       deleteDatabaseOnDispose: false))
+            {
+                using var firstClient = firstFactory.CreateClient(new WebApplicationFactoryClientOptions
+                {
+                    BaseAddress = new Uri("https://localhost")
+                });
+                using var signInResponse = await firstClient.GetAsync("/test/sign-in");
+                sessionCookie = GetCookie(signInResponse, "__Host-Kokishin.Session");
+            }
+
+            using (var secondFactory = new AuthenticationTestFactory(authority, databasePath))
+            using (var secondClient = secondFactory.CreateClient(new WebApplicationFactoryClientOptions
+                   {
+                       BaseAddress = new Uri("https://localhost")
+                   }))
+            using (var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity"))
+            {
+                request.Headers.TryAddWithoutValidation("Cookie", sessionCookie);
+                using var response = await secondClient.SendAsync(request);
+                using var identity = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("test-user-id", identity.RootElement.GetProperty("userId").GetString());
+            }
+        }
+        finally
+        {
+            File.Delete(databasePath);
+        }
+    }
+
+    private sealed class AuthenticationTestFactory : WebApplicationFactory<Program>
+    {
+        private readonly TestOidcAuthority _authority;
+        private readonly string _databasePath;
+        private readonly bool _deleteDatabaseOnDispose;
+
+        public AuthenticationTestFactory(
+            TestOidcAuthority authority,
+            string? databasePath = null,
+            bool deleteDatabaseOnDispose = true)
+        {
+            _authority = authority;
+            _databasePath = databasePath ??
+                Path.Combine(Path.GetTempPath(), $"kokishin-auth-{Guid.NewGuid():N}.db");
+            _deleteDatabaseOnDispose = deleteDatabaseOnDispose;
+            InitializeDatabase();
+        }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+            builder.UseSetting("ConnectionStrings:Kokishin", $"Data Source={_databasePath}");
             builder.UseSetting("Authentication:Authority", TestOidcAuthority.Issuer);
             builder.UseSetting("Authentication:Audience", TestOidcAuthority.Audience);
             builder.UseSetting("Authentication:ClientId", TestOidcAuthority.ClientId);
             builder.UseSetting("Authentication:ClientSecret", TestOidcAuthority.ClientSecret);
             builder.UseSetting("Authentication:CallbackUrl", TestOidcAuthority.CallbackUrl);
+            TestDataProtectionConfiguration.Configure(builder);
             builder.ConfigureTestServices(services =>
             {
                 services.PostConfigure<JwtBearerOptions>("Kokishin.Bearer", options =>
-                    options.ConfigurationManager = authority.CreateConfigurationManager());
+                    options.ConfigurationManager = _authority.CreateConfigurationManager());
                 services.PostConfigure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, options =>
-                    options.ConfigurationManager = authority.CreateConfigurationManager());
+                    options.ConfigurationManager = _authority.CreateConfigurationManager());
                 services.AddSingleton<IStartupFilter, AuthenticationProbeStartupFilter>();
             });
-        });
+        }
+
+        private void InitializeDatabase()
+        {
+            using var scope = Services.CreateScope();
+            scope.ServiceProvider.GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>()
+                .Database.Migrate();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            if (disposing && _deleteDatabaseOnDispose)
+            {
+                File.Delete(_databasePath);
+            }
+        }
+    }
 
     private sealed class AuthenticationProbeStartupFilter : IStartupFilter
     {

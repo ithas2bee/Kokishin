@@ -5,6 +5,7 @@ using Kokishin.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
@@ -13,6 +14,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 var authenticationSettings = AuthentikAuthenticationSettings.Read(builder.Configuration, builder.Environment);
+var dataProtectionSettings = PersistentDataProtectionSettings.Read(
+    builder.Configuration,
+    builder.Environment,
+    authenticationSettings is not null);
+if (dataProtectionSettings is not null)
+{
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(dataProtectionSettings.KeyStorageDirectory)
+        .ProtectKeysWithCertificate(dataProtectionSettings.KeyEncryptionCertificate)
+        .SetApplicationName("Kokishin");
+    builder.Services.AddSingleton(dataProtectionSettings.KeyEncryptionCertificate);
+}
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
 if (authenticationSettings is not null)

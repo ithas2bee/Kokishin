@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+
 namespace Kokishin.Api;
 
 internal sealed record AuthentikAuthenticationSettings(
@@ -20,12 +23,6 @@ internal sealed record AuthentikAuthenticationSettings(
             ["Authentication:ClientSecret"] = section["ClientSecret"],
             ["Authentication:CallbackUrl"] = section["CallbackUrl"]
         };
-
-        if (environment.IsDevelopment() && values.Values.All(string.IsNullOrWhiteSpace))
-        {
-            return null;
-        }
-
         var missingSettings = values
             .Where(setting => string.IsNullOrWhiteSpace(setting.Value))
             .Select(setting => setting.Key)
@@ -60,5 +57,76 @@ internal sealed record AuthentikAuthenticationSettings(
         }
 
         return uri;
+    }
+}
+
+internal sealed record PersistentDataProtectionSettings(
+    DirectoryInfo KeyStorageDirectory,
+    X509Certificate2 KeyEncryptionCertificate)
+{
+    public static PersistentDataProtectionSettings? Read(
+        IConfiguration configuration,
+        IHostEnvironment environment,
+        bool authenticationEnabled)
+    {
+        var section = configuration.GetSection("DataProtection");
+        var values = new Dictionary<string, string?>
+        {
+            ["DataProtection:KeysPath"] = section["KeysPath"],
+            ["DataProtection:CertificatePath"] = section["CertificatePath"],
+            ["DataProtection:CertificatePassword"] = section["CertificatePassword"]
+        };
+        if (environment.IsDevelopment() && !authenticationEnabled &&
+            values.Values.All(string.IsNullOrWhiteSpace))
+        {
+            return null;
+        }
+
+        var missingSettings = values
+            .Where(setting => string.IsNullOrWhiteSpace(setting.Value))
+            .Select(setting => setting.Key)
+            .ToArray();
+        if (missingSettings.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Missing required data protection configuration: {string.Join(", ", missingSettings)}.");
+        }
+
+        var keyStoragePath = values["DataProtection:KeysPath"]!;
+        var certificatePath = values["DataProtection:CertificatePath"]!;
+        if (!Path.IsPathFullyQualified(keyStoragePath) ||
+            !Path.IsPathFullyQualified(certificatePath))
+        {
+            throw new InvalidOperationException(
+                "DataProtection:KeysPath and DataProtection:CertificatePath must be absolute paths.");
+        }
+
+        var keyStorageDirectory = Directory.CreateDirectory(keyStoragePath);
+        X509Certificate2 certificate;
+        try
+        {
+            certificate = X509CertificateLoader.LoadPkcs12FromFile(
+                certificatePath,
+                values["DataProtection:CertificatePassword"],
+                X509KeyStorageFlags.EphemeralKeySet);
+        }
+        catch (CryptographicException exception)
+        {
+            throw new InvalidOperationException(
+                "DataProtection:CertificatePath must identify a valid PKCS#12 certificate.",
+                exception);
+        }
+
+        using var rsaPrivateKey = certificate.GetRSAPrivateKey();
+        if (rsaPrivateKey is null ||
+            certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow ||
+            certificate.NotAfter.ToUniversalTime() <= DateTime.UtcNow)
+        {
+            certificate.Dispose();
+            throw new InvalidOperationException(
+                "The data protection certificate must have a private key and be currently valid.");
+        }
+
+        return new PersistentDataProtectionSettings(keyStorageDirectory, certificate);
     }
 }

@@ -1,4 +1,5 @@
 using Kokishin.Infrastructure.Persistence;
+using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
@@ -38,7 +39,8 @@ public static class DependencyInjection
                 "Connection string 'Kokishin' must specify a SQLite data source.");
         }
 
-        services.AddDbContext<KokishinDbContext>(options => options.UseSqlite(connectionString));
+        services.AddDbContextFactory<KokishinDbContext>(options => options.UseSqlite(connectionString));
+        services.AddSingleton<IDurableSessionTicketStore, SqliteSessionTicketStore>();
         services.AddHealthChecks().AddDbContextCheck<KokishinDbContext>("database");
 
         return services;

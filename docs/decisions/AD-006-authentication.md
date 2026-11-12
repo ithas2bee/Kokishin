@@ -101,10 +101,12 @@ lifetime. The API maps the validated `(issuer, subject)` pair to a stable,
 deterministic internal Kokishin identifier and does not use email or
 provider-specific subject values as application user IDs.
 
-The current session ticket store is in-process memory, so a restart invalidates
-browser sessions and multiple API instances do not share them. Deployments
-requiring persistence or multiple instances must supply a shared protected
-ticket store and persist Data Protection keys. This integration does not
+Browser session tickets are persisted in the configured SQLite database, with
+ticket contents protected by ASP.NET Core Data Protection. Data Protection
+keys are persisted in a restricted shared directory and encrypted with a
+deployment-managed RSA certificate. Instances sharing sessions must use the
+same SQLite database, key directory, certificate, and application name; back
+up both the database and protected key ring. This integration does not
 provision accounts or grant roles; application account provisioning and
 authorization remain server-controlled.
 

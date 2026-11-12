@@ -99,6 +99,9 @@ dotnet user-secrets set "Authentication:Audience" "kokishin-api" --project Kokis
 dotnet user-secrets set "Authentication:ClientId" "kokishin-web" --project Kokishin.Api
 dotnet user-secrets set "Authentication:CallbackUrl" "https://localhost:5108/signin-oidc" --project Kokishin.Api
 dotnet user-secrets set "Authentication:ClientSecret" "<local-client-secret>" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:KeysPath" "/var/lib/kokishin/development-keys" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:CertificatePath" "/path/to/development-key-encryption.pfx" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:CertificatePassword" "<local-certificate-password>" --project Kokishin.Api
 ```
 
 In Production, provide `Authentication__Authority`,
@@ -109,19 +112,33 @@ put the confidential secret or production values in checked-in settings.
 
 `GET /auth/login` starts the Authorization Code flow with PKCE. The callback
 URL must match the Authentik client registration. The API stores provider
-tokens in an ASP.NET Core Data Protection-protected server-side ticket and
-sends the browser only an opaque `__Host-Kokishin.Session` cookie marked
-`Secure`, `HttpOnly`, and `SameSite=Lax`. Cookie-authenticated state-changing
-requests must include the request token returned by the authenticated
-`GET /auth/csrf` endpoint in the `X-XSRF-TOKEN` header. The CSRF cookie is
-`Secure`, `HttpOnly`, and `SameSite=Strict`.
+tokens in a Data Protection-protected ticket in the SQLite `SessionTickets`
+table and sends the browser only an opaque `__Host-Kokishin.Session` cookie
+marked `Secure`, `HttpOnly`, and `SameSite=Lax`. Cookie-authenticated
+state-changing requests must include the request token returned by the
+authenticated `GET /auth/csrf` endpoint in the `X-XSRF-TOKEN` header. The CSRF
+cookie is `Secure`, `HttpOnly`, and `SameSite=Strict`.
 
-The session ticket store is in-process memory: API restarts invalidate browser
-sessions, and multiple API instances do not share them. Production deployments
-must persist and protect ASP.NET Core Data Protection keys and use a shared,
-durable `ITicketStore` if sessions need to survive restarts or span instances.
-JWT bearer tokens are validated through OIDC discovery and signing keys
-against the configured issuer and audience. Authenticated principals expose a
+The API persists Data Protection keys in the configured `DataProtection:KeysPath`
+and encrypts them with the RSA certificate at `DataProtection:CertificatePath`.
+Configure `DataProtection__KeysPath`, `DataProtection__CertificatePath`, and
+`DataProtection__CertificatePassword` in Development User Secrets or
+deployment-managed configuration/secrets. Use a protected, writable persistent
+directory shared by all API instances, restrict its access to the API service,
+and include the directory in protected backups. Keep the certificate and
+password in deployment-managed secret storage; retain the certificate needed
+to decrypt existing key-ring entries during rotation. API instances sharing
+SQLite sessions must use the same persistent database, Data Protection key-ring
+directory, encryption certificate, and `SetApplicationName("Kokishin")`.
+
+Apply the session table migration before running the API:
+
+```sh
+dotnet ef database update --project Kokishin.Infrastructure --startup-project Kokishin.Api
+```
+
+JWT bearer tokens are validated through OIDC discovery and signing keys against
+the configured issuer and audience. Authenticated principals expose a
 deterministic internal Kokishin user ID in `ClaimTypes.NameIdentifier`,
 derived from the validated `(issuer, subject)` pair; it is not the provider
 subject or email. This mapping does not provision an application account or
