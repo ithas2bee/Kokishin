@@ -26,6 +26,7 @@ public sealed class Account
         Id = CreateId(issuer, subject);
         Issuer = issuer;
         Subject = subject;
+        Status = AccountStatus.Inactive;
     }
 
     public Guid Id { get; private set; }
@@ -33,6 +34,28 @@ public sealed class Account
     public string Issuer { get; private set; } = null!;
 
     public string Subject { get; private set; } = null!;
+
+    public AccountStatus Status { get; private set; }
+
+    public void Activate()
+    {
+        if (Status != AccountStatus.Inactive)
+        {
+            throw new InvalidOperationException("Only inactive accounts can be activated.");
+        }
+
+        Status = AccountStatus.Active;
+    }
+
+    public void Deactivate()
+    {
+        if (Status != AccountStatus.Active)
+        {
+            throw new InvalidOperationException("Only active accounts can be deactivated.");
+        }
+
+        Status = AccountStatus.Inactive;
+    }
 
     private static Guid CreateId(string issuer, string subject)
     {

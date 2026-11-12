@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using Kokishin.Application.Accounts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -73,7 +74,7 @@ internal static class AuthentikAuthenticationExtensions
                         context.Response.StatusCode = StatusCodes.Status403Forbidden;
                         return Task.CompletedTask;
                     },
-                    OnValidatePrincipal = context =>
+                    OnValidatePrincipal = async context =>
                     {
                         if (!context.Properties.Items.TryGetValue(SessionStartedAt, out var startedAtValue) ||
                             !long.TryParse(
@@ -83,9 +84,17 @@ internal static class AuthentikAuthenticationExtensions
                             TimeSpan.FromDays(7))
                         {
                             context.RejectPrincipal();
+                            return;
                         }
 
-                        return Task.CompletedTask;
+                        var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                        if (!Guid.TryParse(userId, out var accountId) ||
+                            !await context.HttpContext.RequestServices
+                                .GetRequiredService<IAccountLifecycleService>()
+                                .IsActiveAsync(accountId, context.HttpContext.RequestAborted))
+                        {
+                            context.RejectPrincipal();
+                        }
                     }
                 };
             })
@@ -130,7 +139,8 @@ internal static class AuthentikAuthenticationExtensions
                         return MapInternalIdentity(
                             context.Principal,
                             context.SecurityToken?.Issuer,
-                            context.Fail);
+                            context.Fail,
+                            context.HttpContext);
                     },
                     OnRemoteFailure = async context =>
                     {
@@ -164,7 +174,8 @@ internal static class AuthentikAuthenticationExtensions
                     OnTokenValidated = context => MapInternalIdentity(
                         context.Principal,
                         context.SecurityToken?.Issuer,
-                        context.Fail)
+                        context.Fail,
+                        context.HttpContext)
                 };
             });
 
@@ -220,7 +231,8 @@ internal static class AuthentikAuthenticationExtensions
     private static Task MapInternalIdentity(
         ClaimsPrincipal? principal,
         string? issuer,
-        Action<string> fail)
+        Action<string> fail,
+        HttpContext httpContext)
     {
         var subject = principal?.FindFirst("sub")?.Value;
         if (string.IsNullOrWhiteSpace(issuer) ||
@@ -236,12 +248,29 @@ internal static class AuthentikAuthenticationExtensions
             identity.RemoveClaim(claim);
         }
 
+        var userId = GetInternalUserId(issuer, subject);
+        return MapInternalIdentityAsync(identity, userId, fail, httpContext);
+    }
+
+    private static async Task MapInternalIdentityAsync(
+        ClaimsIdentity identity,
+        Guid userId,
+        Action<string> fail,
+        HttpContext httpContext)
+    {
+        if (!await httpContext.RequestServices
+                .GetRequiredService<IAccountLifecycleService>()
+                .IsActiveAsync(userId, httpContext.RequestAborted))
+        {
+            fail("The Kokishin account is not active.");
+            return;
+        }
+
         identity.AddClaim(new Claim(
             ClaimTypes.NameIdentifier,
-            GetInternalUserId(issuer, subject).ToString("D"),
+            userId.ToString("D"),
             ClaimValueTypes.String,
             "Kokishin"));
-        return Task.CompletedTask;
     }
 
     private static Guid GetInternalUserId(string issuer, string subject)
