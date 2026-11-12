@@ -146,7 +146,11 @@ grant roles or permissions.
 
 The persistent account model uses the same stable internal ID and stores the
 issuer and subject as a unique pair. It does not store email or provider-managed
-credentials; account provisioning remains outside the authentication flow.
+credentials. Authentik owns credential verification, MFA, and recovery;
+Kokishin owns explicit account provisioning and activation or deactivation.
+Only a verified `(issuer, subject)` identity can be provisioned, new accounts
+start inactive, and sign-in neither provisions accounts nor enables inactive
+ones. Email is never used to match or provision an account.
 
 ## Persistence and migrations
 

@@ -3,7 +3,9 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Kokishin.Application.Accounts;
 using Kokishin.Api;
+using Kokishin.Domain.Accounts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -49,6 +51,23 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task InactiveAccount_ValidBearerTokenIsRejected()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "inactive-subject");
+
+        using var response = await SendTokenAsync(client, authority.CreateToken("inactive-subject"));
+
+        Assert.Equal(AccountStatus.Inactive, provisioning.Account.Status);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task MissingCredentials_DoesNotTrustClientIdentityHeaders()
     {
         using var authority = new TestOidcAuthority();
@@ -64,6 +83,9 @@ public class AuthenticationTests
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.DoesNotContain("client-controlled-user", body);
     }
+
+    private static Guid ActiveAccountId =>
+        new Account(TestOidcAuthority.Issuer, "provider-subject").Id;
 
     [Fact]
     public async Task InvalidBearerTokens_AreRejected()
@@ -181,6 +203,27 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task DeactivatedCookieAccount_CannotContinueUsingExistingSession()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost")
+        });
+        using var signInResponse = await client.GetAsync("/test/sign-in");
+        var sessionCookie = GetCookie(signInResponse, "__Host-Kokishin.Session");
+        await factory.Services.GetRequiredService<IAccountLifecycleService>()
+            .DeactivateAsync(ActiveAccountId);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity");
+        request.Headers.TryAddWithoutValidation("Cookie", sessionCookie);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public void ProductionWithoutAuthenticationConfiguration_FailsAtStartup()
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -280,7 +323,7 @@ public class AuthenticationTests
                 using var identity = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-                Assert.Equal("test-user-id", identity.RootElement.GetProperty("userId").GetString());
+                Assert.Equal(ActiveAccountId.ToString("D"), identity.RootElement.GetProperty("userId").GetString());
             }
         }
         finally
@@ -330,8 +373,16 @@ public class AuthenticationTests
         private void InitializeDatabase()
         {
             using var scope = Services.CreateScope();
-            scope.ServiceProvider.GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>()
-                .Database.Migrate();
+            var dbContext = scope.ServiceProvider
+                .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+            dbContext.Database.Migrate();
+            if (!dbContext.Accounts.Any(account => account.Id == ActiveAccountId))
+            {
+                var account = new Account(TestOidcAuthority.Issuer, "provider-subject");
+                account.Activate();
+                dbContext.Accounts.Add(account);
+                dbContext.SaveChanges();
+            }
         }
 
         protected override void Dispose(bool disposing)
@@ -364,7 +415,7 @@ public class AuthenticationTests
                                 "Kokishin.Cookie",
                                 new ClaimsPrincipal(new ClaimsIdentity(
                                     [
-                                        new Claim(ClaimTypes.NameIdentifier, "test-user-id"),
+                                        new Claim(ClaimTypes.NameIdentifier, ActiveAccountId.ToString("D")),
                                         new Claim("access_token", "provider-access-token")
                                     ],
                                     "test")),

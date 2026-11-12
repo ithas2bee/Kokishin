@@ -26,6 +26,9 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Subject")
                         .IsRequired()
                         .HasColumnType("TEXT");

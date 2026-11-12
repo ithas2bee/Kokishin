@@ -1,3 +1,4 @@
+using Kokishin.Application;
 using Kokishin.Application.Accounts;
 using Kokishin.Domain.Accounts;
 using Kokishin.Infrastructure.Persistence;
@@ -17,6 +18,7 @@ public sealed class SqliteAccountStoreTests : IAsyncDisposable
     {
         _connection.Open();
         var services = new ServiceCollection();
+        services.AddApplication();
         services.AddDbContextFactory<KokishinDbContext>(options => options.UseSqlite(_connection));
         services.AddSingleton<IAccountStore, SqliteAccountStore>();
         _services = services.BuildServiceProvider();
@@ -75,6 +77,62 @@ public sealed class SqliteAccountStoreTests : IAsyncDisposable
         Assert.Equal(secondSubject.Id, secondSubjectRetrieved?.Id);
         Assert.NotEqual(firstIssuer.Id, secondIssuerRetrieved?.Id);
         Assert.NotEqual(firstIssuer.Id, secondSubjectRetrieved?.Id);
+    }
+
+    [Fact]
+    public async Task ProvisionVerifiedIdentityAsync_RepeatedProvisioningReturnsExistingInactiveAccount()
+    {
+        var lifecycle = _services.GetRequiredService<IAccountLifecycleService>();
+
+        var first = await lifecycle.ProvisionVerifiedIdentityAsync(
+            "https://identity.example.test/",
+            "subject-1");
+        var second = await lifecycle.ProvisionVerifiedIdentityAsync(
+            "https://identity.example.test/",
+            "subject-1");
+
+        Assert.Equal(AccountProvisioningOutcome.Created, first.Outcome);
+        Assert.Equal(AccountProvisioningOutcome.AlreadyExists, second.Outcome);
+        Assert.Equal(first.Account.Id, second.Account.Id);
+        Assert.Equal(AccountStatus.Inactive, second.Account.Status);
+        Assert.False(await lifecycle.IsActiveAsync(first.Account.Id));
+    }
+
+    [Fact]
+    public async Task Lifecycle_ActivationAndDeactivationPersistStatus()
+    {
+        var lifecycle = _services.GetRequiredService<IAccountLifecycleService>();
+        var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            "https://identity.example.test/",
+            "subject-1");
+
+        await lifecycle.ActivateAsync(provisioning.Account.Id);
+        var activeAccount = await _services.GetRequiredService<IAccountStore>()
+            .FindByIdAsync(provisioning.Account.Id);
+
+        await lifecycle.DeactivateAsync(provisioning.Account.Id);
+        var inactiveAccount = await _services.GetRequiredService<IAccountStore>()
+            .FindByIdAsync(provisioning.Account.Id);
+
+        Assert.Equal(AccountStatus.Active, activeAccount?.Status);
+        Assert.Equal(AccountStatus.Inactive, inactiveAccount?.Status);
+    }
+
+    [Fact]
+    public async Task Lifecycle_InvalidStatusTransitionsAreRejected()
+    {
+        var lifecycle = _services.GetRequiredService<IAccountLifecycleService>();
+        var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            "https://identity.example.test/",
+            "subject-1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => lifecycle.DeactivateAsync(provisioning.Account.Id));
+
+        await lifecycle.ActivateAsync(provisioning.Account.Id);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => lifecycle.ActivateAsync(provisioning.Account.Id));
     }
 
     [Theory]
