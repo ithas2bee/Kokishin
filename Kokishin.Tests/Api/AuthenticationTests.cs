@@ -10,6 +10,7 @@ using Kokishin.Domain.Accounts;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -100,6 +101,81 @@ public class AuthenticationTests
 
         Assert.Equal(HttpStatusCode.Unauthorized, getResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, updateResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task InstructorPolicy_UnauthenticatedCallerGetsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/test/authorize/instructor?role=Instructor")
+        {
+            Content = JsonContent.Create(new { role = "Instructor" })
+        };
+        request.Headers.Add("X-Role", "Instructor");
+
+        using var response = await client.SendAsync(request);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal((int)HttpStatusCode.Unauthorized, problem.RootElement.GetProperty("status").GetInt32());
+    }
+
+    [Fact]
+    public async Task InstructorPolicy_LearnerCannotGainRoleFromClaimsOrRequestData()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            "/test/authorize/instructor?role=Instructor")
+        {
+            Content = JsonContent.Create(new { role = "Instructor" })
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer",
+            authority.CreateToken("provider-subject", role: "Instructor"));
+        request.Headers.Add("X-Role", "Instructor");
+
+        using var response = await client.SendAsync(request);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal((int)HttpStatusCode.Forbidden, problem.RootElement.GetProperty("status").GetInt32());
+    }
+
+    [Theory]
+    [InlineData(AccountRole.Instructor)]
+    [InlineData(AccountRole.Learner)]
+    public async Task RolePolicy_TrustedProvisionedRoleIsAuthorized(AccountRole role)
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var subject = $"policy-{role}";
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            subject,
+            role);
+        await lifecycle.ActivateAsync(provisioning.Account.Id);
+        var path = role == AccountRole.Instructor
+            ? "/test/authorize/instructor"
+            : "/test/authorize/learner";
+
+        using var response = await SendRoleAuthorizationRequestAsync(
+            client,
+            path,
+            authority.CreateToken(subject));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("authorized", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -208,6 +284,16 @@ public class AuthenticationTests
             request.Content = JsonContent.Create(body);
         }
 
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendRoleAuthorizationRequestAsync(
+        HttpClient client,
+        string path,
+        string token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
     }
 
@@ -530,6 +616,35 @@ public class AuthenticationTests
                 next(app);
                 app.Use(async (context, nextMiddleware) =>
                 {
+                    var rolePolicy = context.Request.Path.Value switch
+                    {
+                        "/test/authorize/instructor" => AuthorizationPolicies.Instructor,
+                        "/test/authorize/learner" => AuthorizationPolicies.Learner,
+                        _ => null
+                    };
+                    if (rolePolicy is not null)
+                    {
+                        var authorization = context.RequestServices.GetRequiredService<IAuthorizationService>();
+                        var authorizationResult =
+                            await authorization.AuthorizeAsync(context.User, null, rolePolicy);
+                        if (!authorizationResult.Succeeded)
+                        {
+                            if (context.User.Identity?.IsAuthenticated == true)
+                            {
+                                await context.ForbidAsync();
+                            }
+                            else
+                            {
+                                await context.ChallengeAsync();
+                            }
+
+                            return;
+                        }
+
+                        await context.Response.WriteAsync("authorized");
+                        return;
+                    }
+
                     if (context.Request.Path != "/test/identity")
                     {
                         if (context.Request.Path == "/test/sign-in")
@@ -593,7 +708,8 @@ public class AuthenticationTests
             string? audience = null,
             DateTime? expires = null,
             RSA? signingKey = null,
-            string? nameIdentifier = null)
+            string? nameIdentifier = null,
+            string? role = null)
         {
             var credentials = new SigningCredentials(
                 new RsaSecurityKey(signingKey ?? _signingKey) { KeyId = KeyId },
@@ -607,6 +723,11 @@ public class AuthenticationTests
             if (nameIdentifier is not null)
             {
                 claims.Add(new Claim(ClaimTypes.NameIdentifier, nameIdentifier));
+            }
+
+            if (role is not null)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
             }
 
             var token = new JwtSecurityToken(
