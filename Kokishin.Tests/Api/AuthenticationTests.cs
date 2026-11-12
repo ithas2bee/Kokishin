@@ -215,6 +215,23 @@ public class AuthenticationTests
         Assert.Contains("DataProtection:CertificatePassword", exception.Message);
     }
 
+    [Fact]
+    public async Task DevelopmentWithoutAuthenticationConfiguration_KeepsPublicEndpointsAvailable()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+        });
+        using var client = factory.CreateClient();
+
+        using var healthResponse = await client.GetAsync("/health/database");
+        using var openApiResponse = await client.GetAsync("/openapi/v1.json");
+
+        Assert.Equal(HttpStatusCode.OK, healthResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, openApiResponse.StatusCode);
+    }
+
     private static async Task<HttpResponseMessage> SendTokenAsync(HttpClient client, string token)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity");

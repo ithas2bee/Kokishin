@@ -23,6 +23,12 @@ internal sealed record AuthentikAuthenticationSettings(
             ["Authentication:ClientSecret"] = section["ClientSecret"],
             ["Authentication:CallbackUrl"] = section["CallbackUrl"]
         };
+
+        if (environment.IsDevelopment() && values.Values.All(string.IsNullOrWhiteSpace))
+        {
+            return null;
+        }
+
         var missingSettings = values
             .Where(setting => string.IsNullOrWhiteSpace(setting.Value))
             .Select(setting => setting.Key)
