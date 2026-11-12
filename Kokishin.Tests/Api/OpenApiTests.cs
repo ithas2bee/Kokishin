@@ -18,11 +18,14 @@ public class OpenApiTests
         var paths = root.GetProperty("paths");
         var get = paths.GetProperty("/health/database").GetProperty("get");
         var head = paths.GetProperty("/health/database").GetProperty("head");
+        var profile = paths.GetProperty("/me/profile");
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Check database health", get.GetProperty("summary").GetString());
+        Assert.True(profile.TryGetProperty("get", out _));
+        Assert.True(profile.TryGetProperty("put", out _));
         Assert.Contains("200", responseCodes);
         Assert.Contains("503", responseCodes);
         Assert.Contains("500", responseCodes);

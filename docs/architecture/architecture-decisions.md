@@ -57,3 +57,17 @@ password storage and recovery. The tradeoff is operating a security-critical
 identity service in the home-hosted production environment. See the
 [authentication decision record](../decisions/AD-006-authentication.md) for
 alternatives, lifecycle, identity mapping, and operational requirements.
+
+## AD-007: Keep user profiles separate from authentication accounts
+
+**Status:** Accepted
+
+**Decision:** Store each user's editable display name and optional description
+in a profile keyed by a one-to-one foreign key to the Kokishin account. Profile
+operations are scoped to the authenticated account and never modify authentication
+identity or account lifecycle data. The first successful profile update creates
+the profile; retrieval returns not found until that profile exists.
+
+**Reasoning:** Profile information is application data, not an authentication
+credential. Keeping it separate limits user-editable fields and makes the
+one-profile-per-account invariant explicit in persistence.
