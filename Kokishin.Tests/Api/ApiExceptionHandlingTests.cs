@@ -24,6 +24,7 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+            ConfigureAuthentication(builder);
             builder.ConfigureTestServices(services =>
                 services.AddSingleton<IStartupFilter, ExceptionEndpointStartupFilter>());
         });
@@ -130,6 +131,7 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
+            ConfigureAuthentication(builder);
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.Add(new IsolatedEnvironmentVariablesConfigurationSource(
                     [new("Logging__LogLevel__Default", "Trace")])));
@@ -230,6 +232,16 @@ public class ApiExceptionHandlingTests : IClassFixture<WebApplicationFactory<Pro
                     await nextMiddleware(context);
                 });
             };
+    }
+
+    private static void ConfigureAuthentication(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Authentication:Authority", "https://authentik.example.test/application/o/kokishin/");
+        builder.UseSetting("Authentication:Audience", "kokishin-api");
+        builder.UseSetting("Authentication:ClientId", "kokishin-web");
+        builder.UseSetting("Authentication:ClientSecret", "test-client-secret");
+        builder.UseSetting("Authentication:CallbackUrl", "https://api.example.test/signin-oidc");
+        TestDataProtectionConfiguration.Configure(builder);
     }
 
     private sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope

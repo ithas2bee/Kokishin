@@ -15,6 +15,26 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
+
+            modelBuilder.Entity("Kokishin.Infrastructure.Persistence.Sessions.SessionTicketRecord", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ExpiresAtUnixSeconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("ProtectedTicket")
+                        .IsRequired()
+                        .HasColumnType("BLOB");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("ExpiresAtUnixSeconds");
+
+                    b.ToTable("SessionTickets", (string)null);
+                });
 #pragma warning restore 612, 618
         }
     }

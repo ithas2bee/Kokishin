@@ -79,6 +79,71 @@ configuration colons. Replace `<deployment-managed-path>` with the SQLite file
 location managed by the deployment. A missing, empty, malformed, or source-less
 connection string stops startup with an error identifying the required setting.
 
+## Authentication
+
+The API uses Authentik as its OIDC authority. Set the issuer URL, API audience,
+confidential web client ID, registered callback URL, and confidential client
+secret through configuration; all URLs must use HTTPS. No authentication
+configuration is checked in. In Development, the API can start without
+authentication settings for its current public health and OpenAPI endpoints,
+but authentication is not enabled until all settings are supplied. Every
+non-Development environment validates the settings at startup and stops with a
+list of missing keys.
+
+Initialize User Secrets for the API project (already initialized in this
+repository) and supply local Authentik values:
+
+```sh
+dotnet user-secrets set "Authentication:Authority" "https://authentik.local/application/o/kokishin/" --project Kokishin.Api
+dotnet user-secrets set "Authentication:Audience" "kokishin-api" --project Kokishin.Api
+dotnet user-secrets set "Authentication:ClientId" "kokishin-web" --project Kokishin.Api
+dotnet user-secrets set "Authentication:CallbackUrl" "https://localhost:5108/signin-oidc" --project Kokishin.Api
+dotnet user-secrets set "Authentication:ClientSecret" "<local-client-secret>" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:KeysPath" "/var/lib/kokishin/development-keys" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:CertificatePath" "/path/to/development-key-encryption.pfx" --project Kokishin.Api
+dotnet user-secrets set "DataProtection:CertificatePassword" "<local-certificate-password>" --project Kokishin.Api
+```
+
+In Production, provide `Authentication__Authority`,
+`Authentication__Audience`, `Authentication__ClientId`, and
+`Authentication__CallbackUrl` as deployment configuration, and provide
+`Authentication__ClientSecret` from deployment-managed secret storage. Do not
+put the confidential secret or production values in checked-in settings.
+
+`GET /auth/login` starts the Authorization Code flow with PKCE. The callback
+URL must match the Authentik client registration. The API stores provider
+tokens in a Data Protection-protected ticket in the SQLite `SessionTickets`
+table and sends the browser only an opaque `__Host-Kokishin.Session` cookie
+marked `Secure`, `HttpOnly`, and `SameSite=Lax`. Cookie-authenticated
+state-changing requests must include the request token returned by the
+authenticated `GET /auth/csrf` endpoint in the `X-XSRF-TOKEN` header. The CSRF
+cookie is `Secure`, `HttpOnly`, and `SameSite=Strict`.
+
+The API persists Data Protection keys in the configured `DataProtection:KeysPath`
+and encrypts them with the RSA certificate at `DataProtection:CertificatePath`.
+Configure `DataProtection__KeysPath`, `DataProtection__CertificatePath`, and
+`DataProtection__CertificatePassword` in Development User Secrets or
+deployment-managed configuration/secrets. Use a protected, writable persistent
+directory shared by all API instances, restrict its access to the API service,
+and include the directory in protected backups. Keep the certificate and
+password in deployment-managed secret storage; retain the certificate needed
+to decrypt existing key-ring entries during rotation. API instances sharing
+SQLite sessions must use the same persistent database, Data Protection key-ring
+directory, encryption certificate, and `SetApplicationName("Kokishin")`.
+
+Apply the session table migration before running the API:
+
+```sh
+dotnet ef database update --project Kokishin.Infrastructure --startup-project Kokishin.Api
+```
+
+JWT bearer tokens are validated through OIDC discovery and signing keys against
+the configured issuer and audience. Authenticated principals expose a
+deterministic internal Kokishin user ID in `ClaimTypes.NameIdentifier`,
+derived from the validated `(issuer, subject)` pair; it is not the provider
+subject or email. This mapping does not provision an application account or
+grant roles or permissions.
+
 ## Persistence and migrations
 
 Persistence uses Entity Framework Core 10 with SQLite. The context and provider
