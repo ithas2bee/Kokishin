@@ -181,7 +181,6 @@ internal static class AuthentikAuthenticationExtensions
 
         services.AddOptions<CookieAuthenticationOptions>(CookieScheme)
             .Configure<ITicketStore>((options, ticketStore) => options.SessionStore = ticketStore);
-        services.AddAuthorization();
         return services;
     }
 

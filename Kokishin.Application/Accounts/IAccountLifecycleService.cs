@@ -15,4 +15,6 @@ public interface IAccountLifecycleService
     Task DeactivateAsync(Guid accountId, CancellationToken cancellationToken = default);
 
     Task<bool> IsActiveAsync(Guid accountId, CancellationToken cancellationToken = default);
+
+    Task<AccountRole?> GetRoleAsync(Guid accountId, CancellationToken cancellationToken = default);
 }
