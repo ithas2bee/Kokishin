@@ -85,6 +85,17 @@ unauthenticated protected requests, recognized identities, invalid/expired/
 malformed bearer tokens, safe Problem Details responses, and cookie-session
 behavior.
 
+The test host exposes policy probes under `/test/authorize/`; these are not
+production endpoints. They exercise the registered policies through HTTP:
+
+| Endpoint | Anonymous | Instructor | Learner |
+| --- | --- | --- | --- |
+| `GET /test/authorize/instructor` | 401 | 200 | 403 |
+| `GET /test/authorize/learner` | 401 | 403 | 200 |
+| `GET` or `PUT /me/profile` | 401 | Allowed | Allowed |
+| `GET /health/database` | Public | Public | Public |
+| `GET /openapi/v1.json` | Public in Development; Production only when enabled | Same | Same |
+
 Run the authentication integration tests or the complete suite from the
 repository root:
 

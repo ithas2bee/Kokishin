@@ -104,19 +104,21 @@ public class AuthenticationTests
         Assert.Equal(HttpStatusCode.Unauthorized, updateResponse.StatusCode);
     }
 
-    [Fact]
-    public async Task InstructorPolicy_UnauthenticatedCallerGetsUnauthorized()
+    [Theory]
+    [InlineData(AccountRole.Instructor, "/test/authorize/instructor")]
+    [InlineData(AccountRole.Learner, "/test/authorize/learner")]
+    public async Task RolePolicy_UnauthenticatedCallerGetsUnauthorized(AccountRole role, string path)
     {
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            "/test/authorize/instructor?role=Instructor")
+            $"{path}?role={role}")
         {
-            Content = JsonContent.Create(new { role = "Instructor" })
+            Content = JsonContent.Create(new { role = role.ToString() })
         };
-        request.Headers.Add("X-Role", "Instructor");
+        request.Headers.Add("X-Role", role.ToString());
 
         using var response = await client.SendAsync(request);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -126,22 +128,28 @@ public class AuthenticationTests
         Assert.Equal((int)HttpStatusCode.Unauthorized, problem.RootElement.GetProperty("status").GetInt32());
     }
 
-    [Fact]
-    public async Task InstructorPolicy_LearnerCannotGainRoleFromClaimsOrRequestData()
+    [Theory]
+    [InlineData(AccountRole.Learner, AccountRole.Instructor, "/test/authorize/instructor")]
+    [InlineData(AccountRole.Instructor, AccountRole.Learner, "/test/authorize/learner")]
+    public async Task RolePolicy_WrongRoleCannotGainAccessFromClientSuppliedValues(
+        AccountRole callerRole,
+        AccountRole requiredRole,
+        string path)
     {
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
+        var identity = TestIdentities.For(callerRole);
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            "/test/authorize/instructor?role=Instructor")
+            $"{path}?role={requiredRole}")
         {
-            Content = JsonContent.Create(new { role = "Instructor" })
+            Content = JsonContent.Create(new { role = requiredRole.ToString() })
         };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
             "Bearer",
-            authority.CreateToken("provider-subject", role: "Instructor"));
-        request.Headers.Add("X-Role", "Instructor");
+            authority.CreateToken(identity.Subject, role: requiredRole.ToString()));
+        request.Headers.Add("X-Role", requiredRole.ToString());
 
         using var response = await client.SendAsync(request);
         using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
