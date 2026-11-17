@@ -34,7 +34,9 @@ public class AuthenticationTests
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
-        var token = authority.CreateToken("provider-subject", nameIdentifier: "provider-supplied-id");
+        var token = TestIdentities.Learner.CreateToken(
+            authority,
+            nameIdentifier: "provider-supplied-id")!;
 
         using var firstResponse = await SendTokenAsync(client, token);
         var firstBody = await firstResponse.Content.ReadAsStringAsync();
@@ -76,14 +78,13 @@ public class AuthenticationTests
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity");
+        using var request = CreateIdentityRequest(authority, TestIdentities.Anonymous);
         request.Headers.Add("X-User-Id", "client-controlled-user");
 
         using var response = await client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        AssertSafeAuthenticationFailure(response, body);
         Assert.DoesNotContain("client-controlled-user", body);
     }
 
@@ -158,13 +159,7 @@ public class AuthenticationTests
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
         using var client = factory.CreateClient();
-        var subject = $"policy-{role}";
-        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
-        var provisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
-            TestOidcAuthority.Issuer,
-            subject,
-            role);
-        await lifecycle.ActivateAsync(provisioning.Account.Id);
+        var identity = TestIdentities.For(role);
         var path = role == AccountRole.Instructor
             ? "/test/authorize/instructor"
             : "/test/authorize/learner";
@@ -172,7 +167,7 @@ public class AuthenticationTests
         using var response = await SendRoleAuthorizationRequestAsync(
             client,
             path,
-            authority.CreateToken(subject));
+            identity.CreateToken(authority)!);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("authorized", await response.Content.ReadAsStringAsync());
@@ -268,8 +263,38 @@ public class AuthenticationTests
             problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
     }
 
-    private static Guid ActiveAccountId =>
-        new Account(TestOidcAuthority.Issuer, "provider-subject", AccountRole.Learner).Id;
+    private static Guid ActiveAccountId => TestIdentities.Learner.AccountId;
+
+    private static HttpRequestMessage CreateIdentityRequest(
+        TestOidcAuthority authority,
+        TestIdentity identity)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/test/identity");
+        var token = identity.CreateToken(authority);
+        if (token is not null)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer",
+                token);
+        }
+
+        return request;
+    }
+
+    private static void AssertSafeAuthenticationFailure(HttpResponseMessage response, string body)
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        using var problem = JsonDocument.Parse(body);
+        Assert.Equal(
+            (int)HttpStatusCode.Unauthorized,
+            problem.RootElement.GetProperty("status").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(problem.RootElement.GetProperty("title").GetString()));
+        Assert.Matches("^[0-9a-f]{32}$", problem.RootElement.GetProperty("traceId").GetString());
+        Assert.DoesNotContain(TestOidcAuthority.ClientSecret, body);
+        Assert.DoesNotContain("Exception", body);
+        Assert.DoesNotContain(" at ", body);
+    }
 
     private static async Task<HttpResponseMessage> SendProfileRequestAsync(
         HttpClient client,
@@ -319,8 +344,7 @@ public class AuthenticationTests
             using var response = await SendTokenAsync(client, token);
             var body = await response.Content.ReadAsStringAsync();
 
-            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+            AssertSafeAuthenticationFailure(response, body);
             Assert.DoesNotContain(token, body);
         }
     }
@@ -586,15 +610,19 @@ public class AuthenticationTests
             var dbContext = scope.ServiceProvider
                 .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
             dbContext.Database.Migrate();
-            if (!dbContext.Accounts.Any(account => account.Id == ActiveAccountId))
+            var lifecycle = scope.ServiceProvider.GetRequiredService<IAccountLifecycleService>();
+            foreach (var identity in new[] { TestIdentities.Instructor, TestIdentities.Learner })
             {
-                var account = new Account(
-                    TestOidcAuthority.Issuer,
-                    "provider-subject",
-                    AccountRole.Learner);
-                account.Activate();
-                dbContext.Accounts.Add(account);
-                dbContext.SaveChanges();
+                var provisioning = lifecycle.ProvisionVerifiedIdentityAsync(
+                        TestOidcAuthority.Issuer,
+                        identity.Subject!,
+                        identity.Role!.Value)
+                    .GetAwaiter()
+                    .GetResult();
+                if (provisioning.Outcome == AccountProvisioningOutcome.Created)
+                {
+                    lifecycle.ActivateAsync(provisioning.Account.Id).GetAwaiter().GetResult();
+                }
             }
         }
 
@@ -756,5 +784,32 @@ public class AuthenticationTests
             configuration.SigningKeys.Add(new RsaSecurityKey(_signingKey) { KeyId = KeyId });
             return new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration);
         }
+    }
+
+    private sealed record TestIdentity(string? Subject, AccountRole? Role)
+    {
+        public Guid AccountId => new Account(
+            TestOidcAuthority.Issuer,
+            Subject ?? throw new InvalidOperationException("Anonymous identities do not have accounts."),
+            Role ?? throw new InvalidOperationException("Anonymous identities do not have account roles.")).Id;
+
+        public string? CreateToken(TestOidcAuthority authority, string? nameIdentifier = null) =>
+            Subject is null
+                ? null
+                : authority.CreateToken(Subject, nameIdentifier: nameIdentifier, role: Role?.ToString());
+    }
+
+    private static class TestIdentities
+    {
+        public static readonly TestIdentity Anonymous = new(null, null);
+        public static readonly TestIdentity Instructor = new("instructor-subject", AccountRole.Instructor);
+        public static readonly TestIdentity Learner = new("provider-subject", AccountRole.Learner);
+
+        public static TestIdentity For(AccountRole role) => role switch
+        {
+            AccountRole.Instructor => Instructor,
+            AccountRole.Learner => Learner,
+            _ => throw new ArgumentOutOfRangeException(nameof(role), role, null)
+        };
     }
 }

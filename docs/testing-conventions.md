@@ -50,8 +50,9 @@ not require building a broader integration-test framework.
 Provide explicit test configuration instead of relying on a developer's
 environment, local files, or normal Kokishin database. For API tests, set an
 appropriate test-host environment and override required settings in the host.
-The existing API tests use the `Production` environment and
-`Data Source=:memory:` for the SQLite connection.
+Authentication API tests use the `Production` environment and a unique
+temporary SQLite database file per test host, which is deleted when the host is
+disposed.
 
 Database-dependent tests must use an isolated database and test data. Prefer
 SQLite in-memory storage when its lifetime semantics fit the test. SQLite
@@ -63,6 +64,34 @@ during disposal. A fixture may own reusable
 infrastructure, but it must not share mutable database state between tests. Do
 not use `kokishin.db` or a developer-specific filesystem path. Do not add a
 database provider solely for tests.
+
+### Authentication integration tests
+
+`Kokishin.Tests/Api/AuthenticationTests.cs` exercises the production API
+authentication and authorization pipeline through `WebApplicationFactory`.
+The test host supplies placeholder Authentik settings and replaces OIDC
+discovery with static test signing metadata; tokens are signed locally, so the
+tests do not contact an identity provider or require provider credentials.
+Authentication settings, the temporary database path, and test Data Protection
+certificate and key paths are overridden on the test host and do not change
+developer environment variables or local configuration.
+
+Use `TestIdentities.Anonymous` to send a request without credentials,
+`TestIdentities.Instructor` for an active Instructor account, and
+`TestIdentities.Learner` for an active Learner account. The test host seeds
+those identities through account provisioning and activation in its isolated
+database. Existing coverage verifies
+unauthenticated protected requests, recognized identities, invalid/expired/
+malformed bearer tokens, safe Problem Details responses, and cookie-session
+behavior.
+
+Run the authentication integration tests or the complete suite from the
+repository root:
+
+```sh
+dotnet test Kokishin.sln --filter "FullyQualifiedName~AuthenticationTests"
+dotnet test Kokishin.sln
+```
 
 ## Fixtures and shared utilities
 
