@@ -71,3 +71,19 @@ the profile; retrieval returns not found until that profile exists.
 **Reasoning:** Profile information is application data, not an authentication
 credential. Keeping it separate limits user-editable fields and makes the
 one-profile-per-account invariant explicit in persistence.
+
+## AD-008: Use instructor-managed course enrollment
+
+**Status:** Accepted
+
+**Date:** 2026-11-17
+
+**Decision:** Require the active course-owning Instructor to explicitly enroll
+active Learner accounts. Keep enrollment independent from account roles, define
+its lifecycle and course-access rules, and deny learner access to Draft courses.
+See the [course enrollment decision record](../decisions/AD-008-course-enrollment.md)
+for the state transitions and unresolved questions.
+
+**Reasoning:** An explicit owner-controlled action provides a defined
+authorization boundary without assuming self-enrollment, automatic enrollment,
+or an external enrollment service.

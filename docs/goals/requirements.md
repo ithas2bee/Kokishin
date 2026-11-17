@@ -32,6 +32,23 @@ This is the initial requirements baseline. Requirements should be refined into i
 - FR-012: Users shall be able to find their courses and navigate course content.
 - FR-013: The system shall present course status and relevant next actions clearly.
 
+### Enrollment
+
+- FR-014: Only an active Instructor who owns a course may explicitly enroll an
+  active Learner account in it. Enrollment is instructor-managed; learners
+  cannot self-enroll or request enrollment, and no separate approval step is
+  required.
+- FR-015: Each learner account may have at most one enrollment per course.
+  Enrollment status shall be `Active`, `Suspended`, `Withdrawn`, or `Removed`.
+  The course owner may suspend, reactivate, remove, or explicitly re-enroll;
+  learners may withdraw their own active or suspended enrollment. Withdrawal
+  and removal retain the enrollment record. Repeating an enrollment action for
+  an active enrollment shall not create a duplicate or change its state.
+- FR-016: A learner may access course content only with an active enrollment in
+  a published course. Draft course content shall be accessible only to the
+  course owner. Changing a course to Draft blocks learner access without
+  changing enrollment status.
+
 ## Non-functional requirements
 
 - NFR-001: The interface should be responsive and usable on common desktop and mobile screen sizes.
@@ -45,4 +62,5 @@ This is the initial requirements baseline. Requirements should be refined into i
 
 - The first release targets an individual instructor's course experience rather than institution-wide administration.
 - The initial roles are instructor and learner; administrator capabilities can be specified later if needed.
-- Detailed grading policies, quiz behavior, and enrollment rules require explicit design before implementation.
+- Detailed grading policies and quiz behavior require explicit design before implementation.
+- Enrollment notifications or learner acceptance, retention of withdrawn or removed enrollment history, and course ownership transfer remain open questions; see [AD-008](../decisions/AD-008-course-enrollment.md).
