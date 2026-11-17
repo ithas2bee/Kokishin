@@ -169,7 +169,10 @@ stores the stable account ID, its unique issuer/subject pair, and its role. The
 role is stored as the stable `Instructor` or `Learner` name; the role migration
 assigns existing accounts `Learner`. The `Profiles` table stores each account's
 required display name and optional description, using the account ID as a
-one-to-one foreign key.
+one-to-one foreign key. The `Courses` table stores each course's stable ID,
+owning account ID, required title, optional description, and status. New courses
+start as `Draft`, and their owner ID is derived from the authenticated Instructor
+rather than supplied by the client.
 
 Install the EF command-line tool once, then apply all migrations:
 

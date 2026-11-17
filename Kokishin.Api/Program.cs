@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using Kokishin.Application;
+using Kokishin.Application.Courses;
 using Kokishin.Api;
 using Kokishin.Application.Profiles;
 using Kokishin.Infrastructure;
 using Kokishin.Domain.Accounts;
+using Kokishin.Domain.Courses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -117,6 +119,14 @@ if (authenticationSettings is not null)
         .Produces<ProfileResponse>()
         .ProducesValidationProblem()
         .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+    app.MapPost("/courses", CreateCourseAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Create a course owned by the authenticated Instructor")
+        .Produces<CourseResponse>(StatusCodes.Status201Created)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -186,11 +196,55 @@ static async Task<IResult> UpdateOwnProfileAsync(
     }
 }
 
+static async Task<IResult> CreateCourseAsync(
+    HttpContext context,
+    CreateCourseRequest request,
+    ICourseService courseService)
+{
+    if (!TryGetAccountId(context.User, out var ownerId))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var course = await courseService.CreateCourseAsync(
+            ownerId,
+            request.Title,
+            request.Description,
+            context.RequestAborted);
+        var response = new CourseResponse(
+            course.Id,
+            course.OwnerId,
+            course.Title,
+            course.Description,
+            course.Status.ToString());
+        return Results.Created($"/courses/{course.Id:D}", response);
+    }
+    catch (ArgumentException exception) when (exception.ParamName is "title" or "description")
+    {
+        var field = exception.ParamName!;
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [field] = [exception.Message]
+        });
+    }
+}
+
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
     Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);
 
 internal sealed record UpdateProfileRequest(string DisplayName, string? Description);
 
 internal sealed record ProfileResponse(string DisplayName, string? Description);
+
+internal sealed record CreateCourseRequest(string Title, string? Description);
+
+internal sealed record CourseResponse(
+    Guid Id,
+    Guid OwnerId,
+    string Title,
+    string? Description,
+    string Status);
 
 public partial class Program;

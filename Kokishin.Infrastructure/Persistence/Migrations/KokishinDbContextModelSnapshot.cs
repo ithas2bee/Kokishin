@@ -45,6 +45,34 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.ToTable("Accounts", (string)null);
                 });
 
+            modelBuilder.Entity("Kokishin.Domain.Courses.Course", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("Courses", (string)null);
+                });
+
             modelBuilder.Entity("Kokishin.Domain.Profiles.Profile", b =>
                 {
                     b.Property<Guid>("AccountId")
@@ -82,6 +110,15 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.HasIndex("ExpiresAtUnixSeconds");
 
                     b.ToTable("SessionTickets", (string)null);
+                });
+
+            modelBuilder.Entity("Kokishin.Domain.Courses.Course", b =>
+                {
+                    b.HasOne("Kokishin.Domain.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Kokishin.Domain.Profiles.Profile", b =>

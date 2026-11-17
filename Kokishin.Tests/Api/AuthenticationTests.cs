@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Net.Http.Json;
 using Kokishin.Application.Accounts;
+using Kokishin.Domain.Courses;
 using Kokishin.Api;
 using Kokishin.Domain.Accounts;
 using Microsoft.AspNetCore.Authentication;
@@ -271,6 +272,131 @@ public class AuthenticationTests
             problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
     }
 
+    [Fact]
+    public async Task CourseCreation_InstructorPersistsCourseUnderValidatedPrincipal()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var attackerOwnerId = Guid.NewGuid();
+
+        using var response = await SendCourseRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new
+            {
+                title = "  Biology  ",
+                description = "  An introduction.  ",
+                ownerId = attackerOwnerId
+            });
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var courseId = Guid.Parse(result.RootElement.GetProperty("id").GetString()!);
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+        var persisted = await database.Courses.SingleAsync(course => course.Id == courseId);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal($"/courses/{courseId:D}", response.Headers.Location?.OriginalString);
+        Assert.Equal(TestIdentities.Instructor.AccountId, persisted.OwnerId);
+        Assert.NotEqual(attackerOwnerId, persisted.OwnerId);
+        Assert.Equal(TestIdentities.Instructor.AccountId,
+            Guid.Parse(result.RootElement.GetProperty("ownerId").GetString()!));
+        Assert.Equal("Biology", result.RootElement.GetProperty("title").GetString());
+        Assert.Equal("An introduction.", result.RootElement.GetProperty("description").GetString());
+        Assert.Equal(CourseStatus.Draft.ToString(), result.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task CourseCreation_LearnerIsForbidden()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendCourseRequestAsync(
+            client,
+            TestIdentities.Learner.CreateToken(authority)!,
+            new { title = "Biology" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CourseCreation_AnonymousCallerIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await client.PostAsJsonAsync("/courses", new { title = "Biology" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task CourseCreation_EmptyTitleReturnsValidationProblem(string title)
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendCourseRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { title });
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "title",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
+    [Fact]
+    public async Task CourseCreation_MissingTitleReturnsValidationProblem()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/courses")
+        {
+            Content = JsonContent.Create(new { description = "An introduction." })
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer",
+            TestIdentities.Instructor.CreateToken(authority)!);
+
+        using var response = await client.SendAsync(request);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "title",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
+    [Fact]
+    public async Task CourseCreation_DescriptionExceedsLimitReturnsValidationProblem()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendCourseRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { title = "Biology", description = new string('a', Course.MaxDescriptionLength + 1) });
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "description",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
     private static Guid ActiveAccountId => TestIdentities.Learner.AccountId;
 
     private static HttpRequestMessage CreateIdentityRequest(
@@ -317,6 +443,19 @@ public class AuthenticationTests
             request.Content = JsonContent.Create(body);
         }
 
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendCourseRequestAsync(
+        HttpClient client,
+        string token,
+        object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/courses")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         return await client.SendAsync(request);
     }
 
