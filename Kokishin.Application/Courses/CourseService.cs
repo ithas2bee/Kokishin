@@ -14,4 +14,15 @@ public sealed class CourseService(ICourseStore courseStore) : ICourseService
         await courseStore.AddAsync(course, cancellationToken);
         return course;
     }
+
+    public Task<IReadOnlyList<Course>> ListOwnedCoursesAsync(
+        Guid ownerId,
+        CancellationToken cancellationToken = default) =>
+        courseStore.ListByOwnerIdAsync(ownerId, cancellationToken);
+
+    public Task<Course?> GetOwnedCourseAsync(
+        Guid ownerId,
+        Guid courseId,
+        CancellationToken cancellationToken = default) =>
+        courseStore.FindByIdAndOwnerIdAsync(courseId, ownerId, cancellationToken);
 }

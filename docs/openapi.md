@@ -28,13 +28,24 @@ access; the generated document contains no configuration values.
 
 The API always registers `GET` and `HEAD /health/database`. When authentication
 is configured, it also registers authenticated `GET` and `PUT /me/profile`
-operations for the caller's own profile and `POST /courses` for Instructors.
-Course creation accepts a required `title` and optional `description`; it does
-not accept an owner identifier. The owner is the active Instructor account
-resolved from the validated principal. A successful response returns `201`
-with the course ID, owner ID, title, description, and initial `Draft` status.
-Invalid course fields return a `400` Problem Details validation response;
-anonymous and non-Instructor callers receive `401` and `403`, respectively.
+operations for the caller's own profile and Instructor-only course management
+operations:
+
+- `POST /courses` accepts a required `title` and optional `description`; it
+  does not accept an owner identifier. The owner is the Instructor account
+  resolved from the validated principal. A successful response returns `201`
+  with the course ID, owner ID, title, description, and initial `Draft` status.
+- `GET /courses` returns the authenticated Instructor's courses as an array of
+  course ID, owner ID, title, description, and status. Any client-supplied
+  owner identifier is ignored; the owner is derived from the validated
+  principal. An Instructor with no courses receives `200` and an empty array.
+- `GET /courses/{courseId}` returns the same course fields for a course owned
+  by the authenticated Instructor. A missing course or one owned by another
+  Instructor returns `404`, without exposing its details.
+
+Course creation validation failures return a `400` Problem Details response.
+Anonymous callers receive `401` and Learners receive `403` for all course
+management operations.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

@@ -9,4 +9,13 @@ public interface ICourseService
         string title,
         string? description = null,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Course>> ListOwnedCoursesAsync(
+        Guid ownerId,
+        CancellationToken cancellationToken = default);
+
+    Task<Course?> GetOwnedCourseAsync(
+        Guid ownerId,
+        Guid courseId,
+        CancellationToken cancellationToken = default);
 }
