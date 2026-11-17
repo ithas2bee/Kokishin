@@ -3,3 +3,13 @@
 *.db
 *.db-shm
 *.db-wal
+
+.vs/
+bin/
+obj/
+*.user
+*.suo
+# Environment-specific settings and secrets
+.env
+.env.*
+!.env.example
