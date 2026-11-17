@@ -36,7 +36,10 @@ public class OpenApiTests
         var get = paths.GetProperty("/health/database").GetProperty("get");
         var head = paths.GetProperty("/health/database").GetProperty("head");
         var profile = paths.GetProperty("/me/profile");
-        var course = paths.GetProperty("/courses").GetProperty("post");
+        var courses = paths.GetProperty("/courses");
+        var course = courses.GetProperty("post");
+        var courseList = courses.GetProperty("get");
+        var courseDetails = paths.GetProperty("/courses/{courseId}").GetProperty("get");
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
@@ -51,6 +54,17 @@ public class OpenApiTests
         Assert.True(course.GetProperty("responses").TryGetProperty("400", out _));
         Assert.True(course.GetProperty("responses").TryGetProperty("401", out _));
         Assert.True(course.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.Equal("List courses owned by the authenticated Instructor",
+            courseList.GetProperty("summary").GetString());
+        Assert.True(courseList.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(courseList.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(courseList.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.Equal("Get a course owned by the authenticated Instructor",
+            courseDetails.GetProperty("summary").GetString());
+        Assert.True(courseDetails.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(courseDetails.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(courseDetails.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.True(courseDetails.GetProperty("responses").TryGetProperty("404", out _));
         Assert.Contains("200", responseCodes);
         Assert.Contains("503", responseCodes);
         Assert.Contains("500", responseCodes);

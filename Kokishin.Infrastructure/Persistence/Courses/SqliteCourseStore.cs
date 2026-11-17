@@ -12,4 +12,28 @@ public sealed class SqliteCourseStore(IDbContextFactory<KokishinDbContext> conte
         dbContext.Courses.Add(course);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Course>> ListByOwnerIdAsync(
+        Guid ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.Courses
+            .AsNoTracking()
+            .Where(course => course.OwnerId == ownerId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Course?> FindByIdAndOwnerIdAsync(
+        Guid courseId,
+        Guid ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.Courses
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                course => course.Id == courseId && course.OwnerId == ownerId,
+                cancellationToken);
+    }
 }

@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Net.Http.Json;
 using Kokishin.Application.Accounts;
+using Kokishin.Application.Courses;
 using Kokishin.Domain.Courses;
 using Kokishin.Api;
 using Kokishin.Domain.Accounts;
@@ -332,6 +333,125 @@ public class AuthenticationTests
         using var response = await client.PostAsJsonAsync("/courses", new { title = "Biology" });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CourseList_InstructorSeesOnlyOwnedCourses_AndIgnoresClientOwnerId()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherProvisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "another-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherProvisioning.Account.Id);
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var ownedCourse = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "My Biology Course");
+        var otherCourse = await courseService.CreateCourseAsync(
+            otherProvisioning.Account.Id,
+            "Private Chemistry Course");
+
+        using var response = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses?ownerId={otherProvisioning.Account.Id:D}",
+            TestIdentities.Instructor.CreateToken(authority)!);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var courses = result.RootElement.EnumerateArray().ToArray();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var course = Assert.Single(courses);
+        Assert.Equal(ownedCourse.Id.ToString("D"), course.GetProperty("id").GetString());
+        Assert.Equal("My Biology Course", course.GetProperty("title").GetString());
+        Assert.DoesNotContain(
+            courses,
+            item => item.GetProperty("id").GetString() == otherCourse.Id.ToString("D"));
+    }
+
+    [Fact]
+    public async Task CourseDetails_InstructorCanReadOwnedCourseButNotAnotherInstructorsCourse()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherProvisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "private-course-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherProvisioning.Account.Id);
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var ownedCourse = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "My Biology Course");
+        var privateCourse = await courseService.CreateCourseAsync(
+            otherProvisioning.Account.Id,
+            "Private Chemistry Course");
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+
+        using var ownedResponse = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses/{ownedCourse.Id:D}",
+            token);
+        using var ownedResult = JsonDocument.Parse(await ownedResponse.Content.ReadAsStringAsync());
+        using var privateResponse = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses/{privateCourse.Id:D}",
+            token);
+
+        Assert.Equal(HttpStatusCode.OK, ownedResponse.StatusCode);
+        Assert.Equal(ownedCourse.Id.ToString("D"), ownedResult.RootElement.GetProperty("id").GetString());
+        Assert.Equal("My Biology Course", ownedResult.RootElement.GetProperty("title").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, privateResponse.StatusCode);
+        Assert.DoesNotContain(
+            "Private Chemistry Course",
+            await privateResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CourseList_InstructorWithoutCoursesReceivesEmptyCollection()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses?ownerId={TestIdentities.Learner.AccountId:D}",
+            TestIdentities.Instructor.CreateToken(authority)!);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(result.RootElement.EnumerateArray());
+    }
+
+    [Fact]
+    public async Task CourseManagementQueries_LearnerIsForbiddenAndAnonymousCallerIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var learnerListResponse = await SendRoleAuthorizationRequestAsync(
+            client,
+            "/courses",
+            TestIdentities.Learner.CreateToken(authority)!);
+        using var learnerDetailsResponse = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses/{course.Id:D}",
+            TestIdentities.Learner.CreateToken(authority)!);
+        using var anonymousListResponse = await client.GetAsync("/courses");
+        using var anonymousDetailsResponse = await client.GetAsync($"/courses/{course.Id:D}");
+
+        Assert.Equal(HttpStatusCode.Forbidden, learnerListResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, learnerDetailsResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousListResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousDetailsResponse.StatusCode);
     }
 
     [Theory]

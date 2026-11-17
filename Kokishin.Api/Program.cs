@@ -127,6 +127,21 @@ if (authenticationSettings is not null)
         .ProducesValidationProblem()
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden);
+
+    app.MapGet("/courses", ListOwnedCoursesAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("List courses owned by the authenticated Instructor")
+        .Produces<CourseResponse[]>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
+
+    app.MapGet("/courses/{courseId:guid}", GetOwnedCourseAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Get a course owned by the authenticated Instructor")
+        .Produces<CourseResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -229,6 +244,43 @@ static async Task<IResult> CreateCourseAsync(
             [field] = [exception.Message]
         });
     }
+}
+
+static async Task<IResult> ListOwnedCoursesAsync(HttpContext context, ICourseService courseService)
+{
+    if (!TryGetAccountId(context.User, out var ownerId))
+    {
+        return Results.Forbid();
+    }
+
+    var courses = await courseService.ListOwnedCoursesAsync(ownerId, context.RequestAborted);
+    return Results.Ok(courses.Select(course => new CourseResponse(
+        course.Id,
+        course.OwnerId,
+        course.Title,
+        course.Description,
+        course.Status.ToString())));
+}
+
+static async Task<IResult> GetOwnedCourseAsync(
+    HttpContext context,
+    Guid courseId,
+    ICourseService courseService)
+{
+    if (!TryGetAccountId(context.User, out var ownerId))
+    {
+        return Results.Forbid();
+    }
+
+    var course = await courseService.GetOwnedCourseAsync(ownerId, courseId, context.RequestAborted);
+    return course is null
+        ? Results.NotFound()
+        : Results.Ok(new CourseResponse(
+            course.Id,
+            course.OwnerId,
+            course.Title,
+            course.Description,
+            course.Status.ToString()));
 }
 
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>

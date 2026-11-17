@@ -62,8 +62,60 @@ public sealed class SqliteCourseStoreTests : IAsyncDisposable
         Assert.IsType<SqliteException>(exception.InnerException);
     }
 
+    [Fact]
+    public async Task ListByOwnerIdAsync_OnlyReturnsCoursesForRequestedOwner()
+    {
+        var firstOwner = CreateActiveInstructor();
+        var secondOwner = CreateActiveInstructor();
+        await using (var dbContext = await CreateDbContextAsync())
+        {
+            dbContext.Accounts.AddRange(firstOwner, secondOwner);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var store = _services.GetRequiredService<ICourseStore>();
+        await store.AddAsync(new Course(firstOwner.Id, "Biology"));
+        await store.AddAsync(new Course(secondOwner.Id, "Chemistry"));
+
+        var courses = await store.ListByOwnerIdAsync(firstOwner.Id);
+
+        var course = Assert.Single(courses);
+        Assert.Equal("Biology", course.Title);
+        Assert.Equal(firstOwner.Id, course.OwnerId);
+    }
+
+    [Fact]
+    public async Task FindByIdAndOwnerIdAsync_DifferentOwner_ReturnsNull()
+    {
+        var owner = CreateActiveInstructor();
+        var otherOwner = CreateActiveInstructor();
+        await using (var dbContext = await CreateDbContextAsync())
+        {
+            dbContext.Accounts.AddRange(owner, otherOwner);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var course = new Course(owner.Id, "Biology");
+        var store = _services.GetRequiredService<ICourseStore>();
+        await store.AddAsync(course);
+
+        var result = await store.FindByIdAndOwnerIdAsync(course.Id, otherOwner.Id);
+
+        Assert.Null(result);
+    }
+
     private Task<KokishinDbContext> CreateDbContextAsync() =>
         _services.GetRequiredService<IDbContextFactory<KokishinDbContext>>().CreateDbContextAsync();
+
+    private static Account CreateActiveInstructor()
+    {
+        var account = new Account(
+            "https://identity.example.test/",
+            Guid.NewGuid().ToString("N"),
+            AccountRole.Instructor);
+        account.Activate();
+        return account;
+    }
 
     public async ValueTask DisposeAsync()
     {
