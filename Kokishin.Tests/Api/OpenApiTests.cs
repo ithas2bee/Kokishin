@@ -7,12 +7,29 @@ namespace Kokishin.Tests;
 public class OpenApiTests
 {
     [Fact]
-    public async Task OpenApiDocument_InDevelopment_DescribesDatabaseHealthEndpoint()
+    public async Task DatabaseHealthEndpoint_AnonymousRequest_ReturnsHealthyResponse()
+    {
+        using var factory = CreateFactory("Production");
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/health/database");
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Null(request.Headers.Authorization);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("Healthy", body);
+    }
+
+    [Fact]
+    public async Task OpenApiDocument_AnonymousRequestInDevelopment_DescribesDatabaseHealthEndpoint()
     {
         using var factory = CreateFactory("Development");
         using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/openapi/v1.json");
 
-        using var response = await client.GetAsync("/openapi/v1.json");
+        using var response = await client.SendAsync(request);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var root = document.RootElement;
         var paths = root.GetProperty("paths");
@@ -22,6 +39,7 @@ public class OpenApiTests
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
+        Assert.Null(request.Headers.Authorization);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Check database health", get.GetProperty("summary").GetString());
         Assert.True(profile.TryGetProperty("get", out _));
@@ -44,25 +62,29 @@ public class OpenApiTests
     }
 
     [Fact]
-    public async Task OpenApiDocument_InProduction_IsDisabledByDefault()
+    public async Task OpenApiDocument_AnonymousRequestInProduction_IsDisabledByDefault()
     {
         using var factory = CreateFactory("Production");
         using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/openapi/v1.json");
 
-        using var response = await client.GetAsync("/openapi/v1.json");
+        using var response = await client.SendAsync(request);
 
+        Assert.Null(request.Headers.Authorization);
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task OpenApiDocument_InProduction_CanBeExplicitlyEnabled()
+    public async Task OpenApiDocument_AnonymousRequestInProduction_CanBeExplicitlyEnabled()
     {
         using var factory = CreateFactory("Production", exposeInProduction: true);
         using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/openapi/v1.json");
 
-        using var response = await client.GetAsync("/openapi/v1.json");
+        using var response = await client.SendAsync(request);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
+        Assert.Null(request.Headers.Authorization);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
         Assert.True(document.RootElement.GetProperty("paths").TryGetProperty("/health/database", out _));
     }
@@ -73,7 +95,7 @@ public class OpenApiTests
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
-            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=OpenApiSensitiveConfiguration");
+            builder.UseSetting("ConnectionStrings:Kokishin", "Data Source=:memory:");
             builder.UseSetting("Authentication:Authority", "https://authentik.example.test/application/o/kokishin/");
             builder.UseSetting("Authentication:Audience", "kokishin-api");
             builder.UseSetting("Authentication:ClientId", "kokishin-web");
