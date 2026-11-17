@@ -4,9 +4,9 @@
 
 | Entity | Purpose | Initial relationships |
 |---|---|---|
-| User | Represents an instructor or learner | Connects to courses through Enrollment |
-| Course | Represents a course offering | Contains modules, announcements, and assignments |
-| Enrollment | Connects a user to a course and records their role/status | Belongs to User and Course |
+| Account | Represents an instructor or learner with one global role | Connects to courses through Enrollment |
+| Course | Represents an Instructor-owned course offering | Belongs to its owner; contains modules, announcements, and assignments |
+| Enrollment | Connects a Learner account to a course and records membership status | Belongs to Account and Course |
 | Module | Groups course material into weeks or units | Belongs to Course |
 | LearningPage | Stores a page or learning item within a module | Belongs to Module |
 | Announcement | Shares course updates | Belongs to Course |
@@ -18,7 +18,8 @@
 
 ```mermaid
 erDiagram
-    USER ||--o{ ENROLLMENT : has
+    ACCOUNT ||--o{ ENROLLMENT : has
+    ACCOUNT ||--o{ COURSE : owns
     COURSE ||--o{ ENROLLMENT : includes
     COURSE ||--o{ MODULE : contains
     MODULE ||--o{ LEARNING_PAGE : contains
@@ -32,6 +33,16 @@ erDiagram
 
 ## Design considerations
 
+- Only an active Learner account may be enrolled; enrollment does not assign an
+  account role. The active course-owning Instructor explicitly creates and
+  manages enrollments, with at most one enrollment per account and course.
+- Enrollment status is `Active`, `Suspended`, `Withdrawn`, or `Removed`.
+  Learners may withdraw their own enrollment; the course owner may suspend,
+  reactivate, remove, or re-enroll them. See [AD-008](../decisions/AD-008-course-enrollment.md)
+  for transition and duplicate-action rules.
+- Learners need an active enrollment and a Published course for content access.
+  Draft course content is available only to its owner; changing course status
+  does not itself change enrollment status.
 - Every entity will need a stable identifier.
 - Creation and modification timestamps should be considered for records that require an audit trail.
 - Enrollment and role checks must prevent unauthorized access to course data.

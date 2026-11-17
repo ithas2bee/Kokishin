@@ -9,6 +9,7 @@ flowchart LR
 
     subgraph Kokishin
         CreateCourse((Create and manage course))
+        ManageEnrollment((Manage learner enrollment))
         OrganizeContent((Organize modules and pages))
         Announce((Publish announcements))
         CreateAssignment((Create assignment))
@@ -21,6 +22,7 @@ flowchart LR
     end
 
     Instructor --> CreateCourse
+    Instructor --> ManageEnrollment
     Instructor --> OrganizeContent
     Instructor --> Announce
     Instructor --> CreateAssignment
@@ -36,4 +38,6 @@ flowchart LR
 
 - Instructor and learner are the initial primary roles.
 - Authentication, enrollment, and authorization support these use cases.
+- Only the course-owning Instructor manages learner enrollment; only active
+  enrollments in Published courses grant learner access.
 - Additional use cases should be added only when included in an approved scope.

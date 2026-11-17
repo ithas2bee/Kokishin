@@ -12,6 +12,21 @@ These workflows describe the intended MVP behavior from the user's point of view
 6. Save changes and publish the course when it is ready.
 7. Confirm that the course and its content appear as expected.
 
+## Instructor: manage course enrollment
+
+1. Open a course the instructor owns.
+2. Explicitly enroll an active Learner account. This action immediately
+   activates that learner's enrollment; creating or publishing the course does
+   not enroll learners.
+3. Suspend or reactivate an enrollment as needed, or remove it when access
+   should end.
+4. Explicitly reactivate a withdrawn or removed enrollment to re-enroll that
+   learner.
+
+Only the course-owning Instructor can perform these enrollment-management
+actions. Learners cannot self-enroll or request enrollment, and enrollment does
+not change an account's global role.
+
 ## Instructor: create an assignment and review work
 
 1. Open a course.
@@ -25,11 +40,17 @@ These workflows describe the intended MVP behavior from the user's point of view
 ## Learner: access course material
 
 1. Open the dashboard.
-2. Select an enrolled course.
+2. Select a published course in which the learner has an active enrollment.
 3. Navigate to the relevant module or week.
 4. Read the learning page or material.
 5. Review announcements and activity instructions.
 6. Participate in any included discussion activity.
+
+Learners cannot access Draft courses, even if they have an active enrollment.
+Changing a course to Draft blocks access until it is published again; it does
+not change the enrollment.
+Learners may withdraw their own active or suspended enrollment; the course
+owner must explicitly re-enroll them before they regain course access.
 
 ## Learner: submit an assignment and view feedback
 
@@ -46,3 +67,5 @@ These workflows describe the intended MVP behavior from the user's point of view
 - Validation errors should explain what needs to be corrected.
 - Learners must not be able to see another learner's submissions, grades, or private feedback.
 - Instructors should be able to tell which submissions need review.
+- An active enrollment exists independently of a course's Published or Draft
+  status; only active enrollments in Published courses grant learner access.
