@@ -1,4 +1,5 @@
 using Kokishin.Domain.Accounts;
+using Kokishin.Domain.Courses;
 using Kokishin.Domain.Profiles;
 using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,8 @@ namespace Kokishin.Infrastructure.Persistence;
 public sealed class KokishinDbContext(DbContextOptions<KokishinDbContext> options) : DbContext(options)
 {
     public DbSet<Account> Accounts => Set<Account>();
+
+    public DbSet<Course> Courses => Set<Course>();
 
     public DbSet<Profile> Profiles => Set<Profile>();
 
@@ -41,6 +44,26 @@ public sealed class KokishinDbContext(DbContextOptions<KokishinDbContext> option
             entity.HasOne<Account>()
                 .WithOne()
                 .HasForeignKey<Profile>(profile => profile.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Course>(entity =>
+        {
+            entity.ToTable("Courses");
+            entity.HasKey(course => course.Id);
+            entity.Property(course => course.Id).ValueGeneratedNever();
+            entity.Property(course => course.OwnerId).IsRequired();
+            entity.Property(course => course.Title)
+                .HasMaxLength(Course.MaxTitleLength)
+                .IsRequired();
+            entity.Property(course => course.Description)
+                .HasMaxLength(Course.MaxDescriptionLength);
+            entity.Property(course => course.Status)
+                .HasConversion<string>()
+                .IsRequired();
+            entity.HasOne<Account>()
+                .WithMany()
+                .HasForeignKey(course => course.OwnerId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

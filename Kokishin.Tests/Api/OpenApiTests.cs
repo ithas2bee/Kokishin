@@ -36,6 +36,7 @@ public class OpenApiTests
         var get = paths.GetProperty("/health/database").GetProperty("get");
         var head = paths.GetProperty("/health/database").GetProperty("head");
         var profile = paths.GetProperty("/me/profile");
+        var course = paths.GetProperty("/courses").GetProperty("post");
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
@@ -44,6 +45,12 @@ public class OpenApiTests
         Assert.Equal("Check database health", get.GetProperty("summary").GetString());
         Assert.True(profile.TryGetProperty("get", out _));
         Assert.True(profile.TryGetProperty("put", out _));
+        Assert.Equal("Create a course owned by the authenticated Instructor",
+            course.GetProperty("summary").GetString());
+        Assert.True(course.GetProperty("responses").TryGetProperty("201", out _));
+        Assert.True(course.GetProperty("responses").TryGetProperty("400", out _));
+        Assert.True(course.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(course.GetProperty("responses").TryGetProperty("403", out _));
         Assert.Contains("200", responseCodes);
         Assert.Contains("503", responseCodes);
         Assert.Contains("500", responseCodes);

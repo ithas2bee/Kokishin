@@ -1,11 +1,11 @@
 # Data Model
 
-## Initial entities
+## Entities
 
 | Entity | Purpose | Initial relationships |
 |---|---|---|
-| Account | Represents an instructor or learner with one global role | Connects to courses through Enrollment |
-| Course | Represents an Instructor-owned course offering | Belongs to its owner; contains modules, announcements, and assignments |
+| Account | Represents an instructor or learner with one global role | Instructors own courses; Learners connect through Enrollment |
+| Course | Represents an Instructor-owned course offering; stores a title, optional description, and Draft or Published status | Belongs to its owner; contains modules, announcements, and assignments |
 | Enrollment | Connects a Learner account to a course and records membership status | Belongs to Account and Course |
 | Module | Groups course material into weeks or units | Belongs to Course |
 | LearningPage | Stores a page or learning item within a module | Belongs to Module |
@@ -18,8 +18,8 @@
 
 ```mermaid
 erDiagram
-    ACCOUNT ||--o{ ENROLLMENT : has
     ACCOUNT ||--o{ COURSE : owns
+    ACCOUNT ||--o{ ENROLLMENT : has
     COURSE ||--o{ ENROLLMENT : includes
     COURSE ||--o{ MODULE : contains
     MODULE ||--o{ LEARNING_PAGE : contains
@@ -50,3 +50,6 @@ erDiagram
 - Submission file storage and discussion data need explicit design before those features are implemented.
 
 This document is a conceptual starting point, not a migration-ready schema.
+Course creation is implemented with a stable ID, an owning account, a required
+title, an optional description, and an initial `Draft` status. The remaining
+entities and relationships shown here are conceptual and are not implemented.
