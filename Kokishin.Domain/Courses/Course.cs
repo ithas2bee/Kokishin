@@ -16,6 +16,24 @@ public sealed class Course
             throw new ArgumentException("Course owner is required.", nameof(ownerId));
         }
 
+        Id = Guid.NewGuid();
+        OwnerId = ownerId;
+        UpdateInformation(title, description);
+        Status = CourseStatus.Draft;
+    }
+
+    public Guid Id { get; private set; }
+
+    public Guid OwnerId { get; private set; }
+
+    public string Title { get; private set; } = null!;
+
+    public string? Description { get; private set; }
+
+    public CourseStatus Status { get; private set; }
+
+    public void UpdateInformation(string title, string? description)
+    {
         if (string.IsNullOrWhiteSpace(title))
         {
             throw new ArgumentException("Title is required.", nameof(title));
@@ -37,20 +55,7 @@ public sealed class Course
                 nameof(description));
         }
 
-        Id = Guid.NewGuid();
-        OwnerId = ownerId;
         Title = normalizedTitle;
         Description = normalizedDescription;
-        Status = CourseStatus.Draft;
     }
-
-    public Guid Id { get; private set; }
-
-    public Guid OwnerId { get; private set; }
-
-    public string Title { get; private set; } = null!;
-
-    public string? Description { get; private set; }
-
-    public CourseStatus Status { get; private set; }
 }

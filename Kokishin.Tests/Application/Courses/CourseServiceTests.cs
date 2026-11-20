@@ -48,11 +48,56 @@ public sealed class CourseServiceTests
         Assert.Same(store.Course, course);
     }
 
+    [Fact]
+    public async Task UpdateOwnedCourseAsync_UpdatesAndPersistsOwnedCourse()
+    {
+        var ownerId = Guid.NewGuid();
+        var store = new RecordingCourseStore
+        {
+            Course = new Course(ownerId, "Biology", "Original description.")
+        };
+        var service = new CourseService(store);
+        var courseId = store.Course!.Id;
+
+        var course = await service.UpdateOwnedCourseAsync(
+            ownerId,
+            courseId,
+            "  Chemistry  ",
+            "  Updated description.  ");
+
+        Assert.Same(store.Course, course);
+        Assert.Same(course, store.UpdatedCourse);
+        Assert.Equal(ownerId, store.FoundOwnerId);
+        Assert.Equal(courseId, store.FoundCourseId);
+        Assert.Equal("Chemistry", course!.Title);
+        Assert.Equal("Updated description.", course.Description);
+        Assert.Equal(courseId, course.Id);
+        Assert.Equal(ownerId, course.OwnerId);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
+
+    [Fact]
+    public async Task UpdateOwnedCourseAsync_CourseNotOwnedOrFound_ReturnsNullWithoutSaving()
+    {
+        var store = new RecordingCourseStore();
+        var service = new CourseService(store);
+
+        var course = await service.UpdateOwnedCourseAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Chemistry");
+
+        Assert.Null(course);
+        Assert.Null(store.UpdatedCourse);
+    }
+
     private sealed class RecordingCourseStore : ICourseStore
     {
-        public Course? Course { get; private set; }
+        public Course? Course { get; set; }
 
         public IReadOnlyList<Course> Courses { get; } = [];
+
+        public Course? UpdatedCourse { get; private set; }
 
         public Guid? ListedOwnerId { get; private set; }
 
@@ -63,6 +108,12 @@ public sealed class CourseServiceTests
         public Task AddAsync(Course course, CancellationToken cancellationToken = default)
         {
             Course = course;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateAsync(Course course, CancellationToken cancellationToken = default)
+        {
+            UpdatedCourse = course;
             return Task.CompletedTask;
         }
 

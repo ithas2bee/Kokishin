@@ -18,4 +18,11 @@ public interface ICourseService
         Guid ownerId,
         Guid courseId,
         CancellationToken cancellationToken = default);
+
+    Task<Course?> UpdateOwnedCourseAsync(
+        Guid ownerId,
+        Guid courseId,
+        string title,
+        string? description = null,
+        CancellationToken cancellationToken = default);
 }

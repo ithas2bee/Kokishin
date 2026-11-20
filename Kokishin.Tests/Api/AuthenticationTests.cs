@@ -412,6 +412,152 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task CourseUpdate_InstructorUpdatesOwnedInformationAndIgnoresIdentityFields()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var original = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Biology",
+            "Original description.");
+        var attackerId = Guid.NewGuid();
+        var attackerOwnerId = Guid.NewGuid();
+
+        using var response = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            original.Id,
+            new
+            {
+                id = attackerId,
+                ownerId = attackerOwnerId,
+                title = "  Chemistry  ",
+                description = "  Updated description.  ",
+                status = CourseStatus.Published.ToString()
+            });
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(original.Id.ToString("D"), result.RootElement.GetProperty("id").GetString());
+        Assert.Equal(TestIdentities.Instructor.AccountId.ToString("D"),
+            result.RootElement.GetProperty("ownerId").GetString());
+        Assert.Equal("Chemistry", result.RootElement.GetProperty("title").GetString());
+        Assert.Equal("Updated description.", result.RootElement.GetProperty("description").GetString());
+        Assert.Equal(CourseStatus.Draft.ToString(), result.RootElement.GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task CourseUpdate_InstructorCannotUpdateAnotherInstructorsCourse()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherProvisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "private-course-update-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherProvisioning.Account.Id);
+        var privateCourse = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(otherProvisioning.Account.Id, "Private Chemistry Course");
+
+        using var response = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            privateCourse.Id,
+            new { title = "Updated private course" });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("Private Chemistry Course", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CourseUpdate_MissingCourseReturnsNotFound()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+
+        using var response = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            Guid.NewGuid(),
+            new { title = "Chemistry" });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task CourseUpdate_EmptyTitleReturnsValidationProblem(string title)
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var response = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            course.Id,
+            new { title });
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "title",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
+    [Fact]
+    public async Task CourseUpdate_DescriptionExceedsLimitReturnsValidationProblem()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var response = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            course.Id,
+            new { title = "Chemistry", description = new string('a', Course.MaxDescriptionLength + 1) });
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "description",
+            problem.RootElement.GetProperty("errors").EnumerateObject().Select(error => error.Name));
+    }
+
+    [Fact]
+    public async Task CourseUpdate_LearnerIsForbiddenAndAnonymousCallerIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var learnerResponse = await SendCourseUpdateRequestAsync(
+            client,
+            TestIdentities.Learner.CreateToken(authority)!,
+            course.Id,
+            new { title = "Chemistry" });
+        using var anonymousResponse = await client.PutAsJsonAsync(
+            $"/courses/{course.Id:D}",
+            new { title = "Chemistry" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, learnerResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task CourseList_InstructorWithoutCoursesReceivesEmptyCollection()
     {
         using var authority = new TestOidcAuthority();
@@ -572,6 +718,20 @@ public class AuthenticationTests
         object body)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/courses")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendCourseUpdateRequestAsync(
+        HttpClient client,
+        string token,
+        Guid courseId,
+        object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/courses/{courseId:D}")
         {
             Content = JsonContent.Create(body)
         };

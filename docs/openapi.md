@@ -42,10 +42,17 @@ operations:
 - `GET /courses/{courseId}` returns the same course fields for a course owned
   by the authenticated Instructor. A missing course or one owned by another
   Instructor returns `404`, without exposing its details.
+- `PUT /courses/{courseId}` accepts a required `title` and optional
+  `description` for a course owned by the authenticated Instructor. The course
+  ID comes from the route, and the owner is derived from the validated
+  principal; request properties for ID, owner, or status do not change them.
+  A successful response returns `200` with the updated course ID, owner ID,
+  title, description, and unchanged status. Validation failures return `400`,
+  while a missing or non-owned course returns `404`.
 
-Course creation validation failures return a `400` Problem Details response.
-Anonymous callers receive `401` and Learners receive `403` for all course
-management operations.
+Course creation and update validation failures return a `400` Problem Details
+response. Anonymous callers receive `401` and Learners receive `403` for all
+course management operations.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

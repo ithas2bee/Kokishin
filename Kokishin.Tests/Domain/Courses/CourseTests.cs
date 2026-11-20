@@ -66,4 +66,33 @@ public sealed class CourseTests
 
         Assert.Null(course.Description);
     }
+
+    [Fact]
+    public void UpdateInformation_ValidFields_AreNormalizedWithoutChangingIdentityOrStatus()
+    {
+        var ownerId = Guid.NewGuid();
+        var course = new Course(ownerId, "Biology");
+        var courseId = course.Id;
+
+        course.UpdateInformation("  Chemistry  ", "  A new course description.  ");
+
+        Assert.Equal("Chemistry", course.Title);
+        Assert.Equal("A new course description.", course.Description);
+        Assert.Equal(courseId, course.Id);
+        Assert.Equal(ownerId, course.OwnerId);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
+
+    [Fact]
+    public void UpdateInformation_InvalidDescription_DoesNotChangeCourse()
+    {
+        var course = new Course(Guid.NewGuid(), "Biology", "Original description.");
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            course.UpdateInformation("Chemistry", new string('a', Course.MaxDescriptionLength + 1)));
+
+        Assert.Equal("description", exception.ParamName);
+        Assert.Equal("Biology", course.Title);
+        Assert.Equal("Original description.", course.Description);
+    }
 }
