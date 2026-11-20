@@ -13,6 +13,15 @@ public sealed class SqliteCourseStore(IDbContextFactory<KokishinDbContext> conte
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateAsync(Course course, CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        dbContext.Courses.Attach(course);
+        dbContext.Entry(course).Property(existing => existing.Title).IsModified = true;
+        dbContext.Entry(course).Property(existing => existing.Description).IsModified = true;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Course>> ListByOwnerIdAsync(
         Guid ownerId,
         CancellationToken cancellationToken = default)

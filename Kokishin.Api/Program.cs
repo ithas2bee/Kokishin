@@ -142,6 +142,15 @@ if (authenticationSettings is not null)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPut("/courses/{courseId:guid}", UpdateOwnedCourseAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Update information for a course owned by the authenticated Instructor")
+        .Produces<CourseResponse>()
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -283,6 +292,44 @@ static async Task<IResult> GetOwnedCourseAsync(
             course.Status.ToString()));
 }
 
+static async Task<IResult> UpdateOwnedCourseAsync(
+    HttpContext context,
+    Guid courseId,
+    UpdateCourseRequest request,
+    ICourseService courseService)
+{
+    if (!TryGetAccountId(context.User, out var ownerId))
+    {
+        return Results.Forbid();
+    }
+
+    try
+    {
+        var course = await courseService.UpdateOwnedCourseAsync(
+            ownerId,
+            courseId,
+            request.Title,
+            request.Description,
+            context.RequestAborted);
+        return course is null
+            ? Results.NotFound()
+            : Results.Ok(new CourseResponse(
+                course.Id,
+                course.OwnerId,
+                course.Title,
+                course.Description,
+                course.Status.ToString()));
+    }
+    catch (ArgumentException exception) when (exception.ParamName is "title" or "description")
+    {
+        var field = exception.ParamName!;
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            [field] = [exception.Message]
+        });
+    }
+}
+
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
     Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);
 
@@ -291,6 +338,8 @@ internal sealed record UpdateProfileRequest(string DisplayName, string? Descript
 internal sealed record ProfileResponse(string DisplayName, string? Description);
 
 internal sealed record CreateCourseRequest(string Title, string? Description);
+
+internal sealed record UpdateCourseRequest(string Title, string? Description);
 
 internal sealed record CourseResponse(
     Guid Id,
