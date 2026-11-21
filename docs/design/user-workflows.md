@@ -9,8 +9,15 @@ These workflows describe the intended MVP behavior from the user's point of view
 3. Create a course and enter its basic details.
 4. Add modules or weekly units.
 5. Add learning pages or materials to each unit.
-6. Save changes and publish the course when it is ready.
-7. Confirm that the course and its content appear as expected.
+6. Save changes while the course is a Draft, then publish it when it is ready.
+7. Return a Published course to Draft when learner access should be paused.
+8. Confirm that the course and its content appear as expected.
+
+Only the course-owning Instructor may publish or return the course to Draft.
+Published status does not make a course public or enroll learners. Learners
+need an active enrollment to access a Published course. Changing status does
+not modify enrollment records. See
+[AD-009](../decisions/AD-009-course-publication.md) for allowed transitions.
 
 ## Instructor: manage course enrollment
 

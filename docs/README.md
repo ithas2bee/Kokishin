@@ -14,6 +14,7 @@ This directory contains the product goals, requirements, architecture notes, dia
 - [Architecture decisions](architecture/architecture-decisions.md)
 - [Authentication architecture decision (AD-006)](decisions/AD-006-authentication.md)
 - [Course enrollment decision (AD-008)](decisions/AD-008-course-enrollment.md)
+- [Course publication decision (AD-009)](decisions/AD-009-course-publication.md)
 - [Repository and backend structure](../README.md#solution-structure)
 
 ## Development

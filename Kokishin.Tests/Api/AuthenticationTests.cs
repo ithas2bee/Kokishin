@@ -558,6 +558,155 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task CoursePublicationStatus_OwnerCanPublishAndReturnCourseToDraft()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology", "An introduction.");
+        var attackerOwnerId = Guid.NewGuid();
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+
+        using var publishResponse = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = CourseStatus.Published.ToString(), ownerId = attackerOwnerId });
+        using var publishedResult = JsonDocument.Parse(await publishResponse.Content.ReadAsStringAsync());
+        using var draftResponse = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = CourseStatus.Draft.ToString() });
+        using var draftResult = JsonDocument.Parse(await draftResponse.Content.ReadAsStringAsync());
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+        var persisted = await database.Courses.SingleAsync(existing => existing.Id == course.Id);
+
+        Assert.Equal(HttpStatusCode.OK, publishResponse.StatusCode);
+        Assert.Equal(CourseStatus.Published.ToString(),
+            publishedResult.RootElement.GetProperty("status").GetString());
+        Assert.Equal(TestIdentities.Instructor.AccountId.ToString("D"),
+            publishedResult.RootElement.GetProperty("ownerId").GetString());
+        Assert.Equal("Biology", publishedResult.RootElement.GetProperty("title").GetString());
+        Assert.Equal("An introduction.", publishedResult.RootElement.GetProperty("description").GetString());
+        Assert.Equal(HttpStatusCode.OK, draftResponse.StatusCode);
+        Assert.Equal(CourseStatus.Draft.ToString(), draftResult.RootElement.GetProperty("status").GetString());
+        Assert.Equal(TestIdentities.Instructor.AccountId, persisted.OwnerId);
+        Assert.Equal(CourseStatus.Draft, persisted.Status);
+    }
+
+    [Fact]
+    public async Task CoursePublicationStatus_InstructorCannotChangeAnotherInstructorsCourse()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherProvisioning = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "course-publication-owner",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherProvisioning.Account.Id);
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(otherProvisioning.Account.Id, "Private Biology");
+
+        using var response = await SendCoursePublicationStatusRequestAsync(
+            client,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            course.Id,
+            new { status = CourseStatus.Published.ToString() });
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+        var persisted = await database.Courses.SingleAsync(existing => existing.Id == course.Id);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+        Assert.Equal(CourseStatus.Draft, persisted.Status);
+    }
+
+    [Fact]
+    public async Task CoursePublicationStatus_LearnerIsForbiddenAndAnonymousCallerIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var learnerResponse = await SendCoursePublicationStatusRequestAsync(
+            client,
+            TestIdentities.Learner.CreateToken(authority)!,
+            course.Id,
+            new { status = CourseStatus.Published.ToString() });
+        using var anonymousResponse = await client.PutAsJsonAsync(
+            $"/courses/{course.Id:D}/publication-status",
+            new { status = CourseStatus.Published.ToString() });
+
+        Assert.Equal(HttpStatusCode.Forbidden, learnerResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task CoursePublicationStatus_DeactivatedInstructorIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+        await factory.Services.GetRequiredService<IAccountLifecycleService>()
+            .DeactivateAsync(TestIdentities.Instructor.AccountId);
+
+        using var response = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = CourseStatus.Published.ToString() });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
+
+    [Fact]
+    public async Task CoursePublicationStatus_UnsupportedAndRepeatedStatusReturnValidationProblem()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+
+        using var unsupportedResponse = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = "Archived" });
+        using var unsupportedProblem = JsonDocument.Parse(
+            await unsupportedResponse.Content.ReadAsStringAsync());
+        using var repeatedResponse = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = CourseStatus.Draft.ToString() });
+        using var repeatedProblem = JsonDocument.Parse(await repeatedResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, unsupportedResponse.StatusCode);
+        Assert.Contains("status",
+            unsupportedProblem.RootElement.GetProperty("errors").EnumerateObject()
+                .Select(error => error.Name));
+        Assert.Equal(HttpStatusCode.BadRequest, repeatedResponse.StatusCode);
+        Assert.Contains("status",
+            repeatedProblem.RootElement.GetProperty("errors").EnumerateObject()
+                .Select(error => error.Name));
+    }
+
+    [Fact]
     public async Task CourseList_InstructorWithoutCoursesReceivesEmptyCollection()
     {
         using var authority = new TestOidcAuthority();
@@ -732,6 +881,22 @@ public class AuthenticationTests
         object body)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, $"/courses/{courseId:D}")
+        {
+            Content = JsonContent.Create(body)
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendCoursePublicationStatusRequestAsync(
+        HttpClient client,
+        string token,
+        Guid courseId,
+        object body)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/courses/{courseId:D}/publication-status")
         {
             Content = JsonContent.Create(body)
         };

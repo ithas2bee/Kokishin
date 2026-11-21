@@ -91,6 +91,44 @@ public sealed class CourseServiceTests
         Assert.Null(store.UpdatedCourse);
     }
 
+    [Fact]
+    public async Task ChangeOwnedCoursePublicationStatusAsync_UpdatesAndPersistsOwnedCourse()
+    {
+        var ownerId = Guid.NewGuid();
+        var store = new RecordingCourseStore
+        {
+            Course = new Course(ownerId, "Biology")
+        };
+        var service = new CourseService(store);
+        var courseId = store.Course!.Id;
+
+        var course = await service.ChangeOwnedCoursePublicationStatusAsync(
+            ownerId,
+            courseId,
+            CourseStatus.Published);
+
+        Assert.Same(store.Course, course);
+        Assert.Same(course, store.UpdatedStatusCourse);
+        Assert.Equal(ownerId, store.FoundOwnerId);
+        Assert.Equal(courseId, store.FoundCourseId);
+        Assert.Equal(CourseStatus.Published, course!.Status);
+    }
+
+    [Fact]
+    public async Task ChangeOwnedCoursePublicationStatusAsync_CourseNotOwnedOrFound_ReturnsNullWithoutSaving()
+    {
+        var store = new RecordingCourseStore();
+        var service = new CourseService(store);
+
+        var course = await service.ChangeOwnedCoursePublicationStatusAsync(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            CourseStatus.Published);
+
+        Assert.Null(course);
+        Assert.Null(store.UpdatedStatusCourse);
+    }
+
     private sealed class RecordingCourseStore : ICourseStore
     {
         public Course? Course { get; set; }
@@ -98,6 +136,8 @@ public sealed class CourseServiceTests
         public IReadOnlyList<Course> Courses { get; } = [];
 
         public Course? UpdatedCourse { get; private set; }
+
+        public Course? UpdatedStatusCourse { get; private set; }
 
         public Guid? ListedOwnerId { get; private set; }
 
@@ -114,6 +154,12 @@ public sealed class CourseServiceTests
         public Task UpdateAsync(Course course, CancellationToken cancellationToken = default)
         {
             UpdatedCourse = course;
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateStatusAsync(Course course, CancellationToken cancellationToken = default)
+        {
+            UpdatedStatusCourse = course;
             return Task.CompletedTask;
         }
 

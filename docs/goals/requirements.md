@@ -48,6 +48,10 @@ This is the initial requirements baseline. Requirements should be refined into i
   a published course. Draft course content shall be accessible only to the
   course owner. Changing a course to Draft blocks learner access without
   changing enrollment status.
+- FR-017: The owning Instructor may publish a Draft course or return a
+  Published course to Draft. No other status transition is valid. Publication
+  does not create, change, or remove enrollments or independently grant Learners
+  access; see [AD-009](../decisions/AD-009-course-publication.md).
 
 ## Non-functional requirements
 
