@@ -49,10 +49,19 @@ operations:
   A successful response returns `200` with the updated course ID, owner ID,
   title, description, and unchanged status. Validation failures return `400`,
   while a missing or non-owned course returns `404`.
+- `PUT /courses/{courseId}/publication-status` accepts `{"status":"Published"}`
+  or `{"status":"Draft"}` for a course owned by the authenticated Instructor.
+  The only valid transitions are Draft to Published and Published to Draft;
+  requesting the current status or an unsupported value returns `400`. A
+  missing or non-owned course returns `404`. The response contains the course
+  ID, owner ID, title, description, and new status. Changing status does not
+  create or modify enrollments and Published does not bypass the active
+  enrollment requirement; see [AD-009](decisions/AD-009-course-publication.md)
+  and [AD-008](decisions/AD-008-course-enrollment.md).
 
 Course creation and update validation failures return a `400` Problem Details
 response. Anonymous callers receive `401` and Learners receive `403` for all
-course management operations.
+course management operations, including publication status changes.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

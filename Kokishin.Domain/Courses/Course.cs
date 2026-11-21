@@ -58,4 +58,30 @@ public sealed class Course
         Title = normalizedTitle;
         Description = normalizedDescription;
     }
+
+    public void ChangePublicationStatus(CourseStatus status)
+    {
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(status),
+                status,
+                "The course publication status is not supported.");
+        }
+
+        if (status == Status)
+        {
+            throw new InvalidOperationException($"The course is already {Status}.");
+        }
+
+        if ((Status, status) is not
+            ((CourseStatus.Draft, CourseStatus.Published) or
+             (CourseStatus.Published, CourseStatus.Draft)))
+        {
+            throw new InvalidOperationException(
+                $"The course cannot transition from {Status} to {status}.");
+        }
+
+        Status = status;
+    }
 }

@@ -141,6 +141,38 @@ public sealed class SqliteCourseStoreTests : IAsyncDisposable
         Assert.Equal(CourseStatus.Published, persisted.Status);
     }
 
+    [Fact]
+    public async Task ChangeOwnedCoursePublicationStatusAsync_PersistsOnlyStatusChange()
+    {
+        var owner = CreateActiveInstructor();
+        await using (var dbContext = await CreateDbContextAsync())
+        {
+            dbContext.Accounts.Add(owner);
+            await dbContext.SaveChangesAsync();
+        }
+
+        var service = _services.GetRequiredService<ICourseService>();
+        var created = await service.CreateCourseAsync(owner.Id, "Biology", "An introduction.");
+
+        var updated = await service.ChangeOwnedCoursePublicationStatusAsync(
+            owner.Id,
+            created.Id,
+            CourseStatus.Published);
+
+        await using var verifyContext = await CreateDbContextAsync();
+        var persisted = await verifyContext.Courses.SingleAsync(course => course.Id == created.Id);
+        var persistedOwner = await verifyContext.Accounts.SingleAsync(account => account.Id == owner.Id);
+
+        Assert.NotNull(updated);
+        Assert.Equal(created.Id, persisted.Id);
+        Assert.Equal(owner.Id, persisted.OwnerId);
+        Assert.Equal("Biology", persisted.Title);
+        Assert.Equal("An introduction.", persisted.Description);
+        Assert.Equal(CourseStatus.Published, persisted.Status);
+        Assert.Equal(owner.Role, persistedOwner.Role);
+        Assert.Equal(owner.Status, persistedOwner.Status);
+    }
+
     private Task<KokishinDbContext> CreateDbContextAsync() =>
         _services.GetRequiredService<IDbContextFactory<KokishinDbContext>>().CreateDbContextAsync();
 

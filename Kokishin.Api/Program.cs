@@ -151,6 +151,15 @@ if (authenticationSettings is not null)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPut("/courses/{courseId:guid}/publication-status", ChangeCoursePublicationStatusAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Change the publication status of a course owned by the authenticated Instructor")
+        .Produces<CourseResponse>()
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -330,6 +339,56 @@ static async Task<IResult> UpdateOwnedCourseAsync(
     }
 }
 
+static async Task<IResult> ChangeCoursePublicationStatusAsync(
+    HttpContext context,
+    Guid courseId,
+    ChangeCoursePublicationStatusRequest request,
+    ICourseService courseService)
+{
+    if (!TryGetAccountId(context.User, out var ownerId))
+    {
+        return Results.Forbid();
+    }
+
+    var status = request.Status switch
+    {
+        nameof(CourseStatus.Draft) => CourseStatus.Draft,
+        nameof(CourseStatus.Published) => CourseStatus.Published,
+        _ => (CourseStatus?)null
+    };
+    if (status is null)
+    {
+        return PublicationStatusValidationProblem("Only Draft and Published are supported.");
+    }
+
+    try
+    {
+        var course = await courseService.ChangeOwnedCoursePublicationStatusAsync(
+            ownerId,
+            courseId,
+            status.Value,
+            context.RequestAborted);
+        return course is null
+            ? Results.NotFound()
+            : Results.Ok(new CourseResponse(
+                course.Id,
+                course.OwnerId,
+                course.Title,
+                course.Description,
+                course.Status.ToString()));
+    }
+    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+    {
+        return PublicationStatusValidationProblem(exception.Message);
+    }
+}
+
+static IResult PublicationStatusValidationProblem(string message) =>
+    Results.ValidationProblem(new Dictionary<string, string[]>
+    {
+        ["status"] = [message]
+    });
+
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
     Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);
 
@@ -340,6 +399,8 @@ internal sealed record ProfileResponse(string DisplayName, string? Description);
 internal sealed record CreateCourseRequest(string Title, string? Description);
 
 internal sealed record UpdateCourseRequest(string Title, string? Description);
+
+internal sealed record ChangeCoursePublicationStatusRequest(string? Status);
 
 internal sealed record CourseResponse(
     Guid Id,

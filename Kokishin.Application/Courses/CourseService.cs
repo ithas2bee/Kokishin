@@ -43,4 +43,21 @@ public sealed class CourseService(ICourseStore courseStore) : ICourseService
         await courseStore.UpdateAsync(course, cancellationToken);
         return course;
     }
+
+    public async Task<Course?> ChangeOwnedCoursePublicationStatusAsync(
+        Guid ownerId,
+        Guid courseId,
+        CourseStatus status,
+        CancellationToken cancellationToken = default)
+    {
+        var course = await courseStore.FindByIdAndOwnerIdAsync(courseId, ownerId, cancellationToken);
+        if (course is null)
+        {
+            return null;
+        }
+
+        course.ChangePublicationStatus(status);
+        await courseStore.UpdateStatusAsync(course, cancellationToken);
+        return course;
+    }
 }
