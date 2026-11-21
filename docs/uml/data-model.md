@@ -6,7 +6,7 @@
 |---|---|---|
 | Account | Represents an instructor or learner with one global role | Instructors own courses; Learners connect through Enrollment |
 | Course | Represents an Instructor-owned course offering; stores a title, optional description, and Draft or Published status | Belongs to its owner; contains modules, announcements, and assignments |
-| Enrollment | Connects a Learner account to a course and records membership status | Belongs to Account and Course |
+| Enrollment | Connects a Learner account to a course and records membership status | Belongs to Account and Course; unique per course and learner |
 | Module | Groups course material into weeks or units | Belongs to Course |
 | LearningPage | Stores a page or learning item within a module | Belongs to Module |
 | Announcement | Shares course updates | Belongs to Course |
@@ -52,4 +52,8 @@ erDiagram
 This document is a conceptual starting point, not a migration-ready schema.
 Course creation is implemented with a stable ID, an owning account, a required
 title, an optional description, and an initial `Draft` status. The remaining
-entities and relationships shown here are conceptual and are not implemented.
+entities and relationships shown here remain conceptual and are not
+implemented. Enrollment is persisted with the course ID and learner account
+ID as a composite primary key and its status stored as `Active`, `Suspended`,
+`Withdrawn`, or `Removed`. Both foreign keys reference existing Courses and
+Accounts rows; the composite key enforces one record per course and learner.
