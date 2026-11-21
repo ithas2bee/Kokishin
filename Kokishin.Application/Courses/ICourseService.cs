@@ -25,4 +25,10 @@ public interface ICourseService
         string title,
         string? description = null,
         CancellationToken cancellationToken = default);
+
+    Task<Course?> ChangeOwnedCoursePublicationStatusAsync(
+        Guid ownerId,
+        Guid courseId,
+        CourseStatus status,
+        CancellationToken cancellationToken = default);
 }

@@ -95,4 +95,55 @@ public sealed class CourseTests
         Assert.Equal("Biology", course.Title);
         Assert.Equal("Original description.", course.Description);
     }
+
+    [Fact]
+    public void ChangePublicationStatus_DraftToPublished_UpdatesStatus()
+    {
+        var course = new Course(Guid.NewGuid(), "Biology");
+
+        course.ChangePublicationStatus(CourseStatus.Published);
+
+        Assert.Equal(CourseStatus.Published, course.Status);
+    }
+
+    [Fact]
+    public void ChangePublicationStatus_PublishedToDraft_UpdatesStatus()
+    {
+        var course = new Course(Guid.NewGuid(), "Biology");
+        course.ChangePublicationStatus(CourseStatus.Published);
+
+        course.ChangePublicationStatus(CourseStatus.Draft);
+
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
+
+    [Theory]
+    [InlineData(CourseStatus.Draft)]
+    [InlineData(CourseStatus.Published)]
+    public void ChangePublicationStatus_CurrentStatus_IsRejectedWithoutChangingCourse(CourseStatus status)
+    {
+        var course = new Course(Guid.NewGuid(), "Biology");
+        if (status == CourseStatus.Published)
+        {
+            course.ChangePublicationStatus(CourseStatus.Published);
+        }
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => course.ChangePublicationStatus(status));
+
+        Assert.Equal(status, course.Status);
+        Assert.Contains("already", exception.Message);
+    }
+
+    [Fact]
+    public void ChangePublicationStatus_UnsupportedStatus_IsRejectedWithoutChangingCourse()
+    {
+        var course = new Course(Guid.NewGuid(), "Biology");
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(
+            () => course.ChangePublicationStatus((CourseStatus)999));
+
+        Assert.Equal("status", exception.ParamName);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
 }
