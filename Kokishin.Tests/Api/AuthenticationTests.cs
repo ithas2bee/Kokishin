@@ -651,6 +651,28 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task CoursePublicationStatus_DeactivatedInstructorIsUnauthorized()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+        await factory.Services.GetRequiredService<IAccountLifecycleService>()
+            .DeactivateAsync(TestIdentities.Instructor.AccountId);
+
+        using var response = await SendCoursePublicationStatusRequestAsync(
+            client,
+            token,
+            course.Id,
+            new { status = CourseStatus.Published.ToString() });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(CourseStatus.Draft, course.Status);
+    }
+
+    [Fact]
     public async Task CoursePublicationStatus_UnsupportedAndRepeatedStatusReturnValidationProblem()
     {
         using var authority = new TestOidcAuthority();
