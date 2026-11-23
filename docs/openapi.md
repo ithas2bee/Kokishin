@@ -40,8 +40,12 @@ operations:
   owner identifier is ignored; the owner is derived from the validated
   principal. An Instructor with no courses receives `200` and an empty array.
 - `GET /courses/{courseId}` returns the same course fields for a course owned
-  by the authenticated Instructor. A missing course or one owned by another
-  Instructor returns `404`, without exposing its details.
+  by the authenticated Instructor, or for a Learner when the course is
+  `Published` and the Learner has an `Active` enrollment. A missing course or
+  one the caller is not eligible to read returns `404`, without exposing its
+  details. Instructor ownership and Learner enrollment are checked against
+  persisted data by resource-based authorization; a Learner cannot read Draft
+  courses or courses with a Suspended, Withdrawn, or Removed enrollment.
 - `PUT /courses/{courseId}` accepts a required `title` and optional
   `description` for a course owned by the authenticated Instructor. The course
   ID comes from the route, and the owner is derived from the validated
@@ -96,9 +100,10 @@ operations:
   course content.
 
 Course creation and update validation failures return a `400` Problem Details
-response. Anonymous callers receive `401` and Learners receive `403` for all
-course management operations, including publication status changes and
-enrollment. A course owned by another Instructor remains hidden with `404`.
+response. Anonymous callers receive `401` and Learners receive `403` for course
+management operations, including publication status changes and enrollment.
+The course-detail endpoint permits eligible enrolled Learners as described
+above. A course owned by another Instructor remains hidden with `404`.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

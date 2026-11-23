@@ -45,6 +45,24 @@ do not define how enrollment is created or managed.
   Changing a published course to Draft blocks learner access but does not alter
   enrollment states; access resumes if the course is republished and enrollment
   remains active.
+- Course operations have the following access matrix. Every caller must have an
+  active account, and the server derives the caller ID and role from the
+  authenticated identity and persisted account:
+
+  | Operation | Instructor | Learner |
+  |---|---|---|
+  | Create a course | Allowed; created course is owned by caller | Denied |
+  | List courses (`GET /courses`) | Caller’s courses only | Denied |
+  | Read a course (`GET /courses/{courseId}`) | Caller’s owned course | Only when published and caller has an `Active` enrollment |
+  | Update course information or publication status | Caller’s owned course only | Denied |
+  | Create, list, or change course enrollments | Caller’s owned course only | Denied |
+  | Read or withdraw an enrollment through `/me/enrollments` | Denied | Caller’s own enrollment only |
+
+  A missing course and an existing course the caller cannot read both return
+  `404`, so course existence and private details are not disclosed. Course
+  management operations on a course not owned by the Instructor also return
+  `404`. The course read authorization is resource-based and checks persisted
+  ownership or the Learner’s enrollment and course publication status.
 - Enrollment authorization is enforced by the server using the persisted
   account role, status, course ownership, enrollment state, and course status.
   This decision adds no marketplace, payment, or institution integration.

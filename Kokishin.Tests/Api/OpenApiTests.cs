@@ -69,11 +69,12 @@ public class OpenApiTests
         Assert.True(courseList.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(courseList.GetProperty("responses").TryGetProperty("401", out _));
         Assert.True(courseList.GetProperty("responses").TryGetProperty("403", out _));
-        Assert.Equal("Get a course owned by the authenticated Instructor",
+        Assert.Equal(
+            "Get a course owned by the authenticated Instructor or available to the enrolled Learner",
             courseDetails.GetProperty("summary").GetString());
         Assert.True(courseDetails.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(courseDetails.GetProperty("responses").TryGetProperty("401", out _));
-        Assert.True(courseDetails.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.False(courseDetails.GetProperty("responses").TryGetProperty("403", out _));
         Assert.True(courseDetails.GetProperty("responses").TryGetProperty("404", out _));
         Assert.Equal("Update information for a course owned by the authenticated Instructor",
             courseUpdate.GetProperty("summary").GetString());

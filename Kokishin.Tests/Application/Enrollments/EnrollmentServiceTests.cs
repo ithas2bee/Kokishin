@@ -369,6 +369,11 @@ public sealed class EnrollmentServiceTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Course>>(Courses.Where(course => course.OwnerId == ownerId).ToArray());
 
+        public Task<Course?> FindCourseByIdAsync(
+            Guid courseId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Courses.SingleOrDefault(course => course.Id == courseId));
+
         public Task<Course?> FindByIdAndOwnerIdAsync(
             Guid courseId,
             Guid ownerId,

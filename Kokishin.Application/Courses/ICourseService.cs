@@ -14,6 +14,8 @@ public interface ICourseService
         Guid ownerId,
         CancellationToken cancellationToken = default);
 
+    Task<Course?> GetCourseAsync(Guid courseId, CancellationToken cancellationToken = default);
+
     Task<Course?> GetOwnedCourseAsync(
         Guid ownerId,
         Guid courseId,

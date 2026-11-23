@@ -42,8 +42,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(AuthorizationPolicies.Learner, policy =>
         policy.RequireAuthenticatedUser()
             .AddRequirements(new AccountRoleRequirement(AccountRole.Learner)));
+    options.AddPolicy(AuthorizationPolicies.CourseAccess, policy =>
+        policy.RequireAuthenticatedUser()
+            .AddRequirements(new CourseAccessRequirement()));
 });
 builder.Services.AddScoped<IAuthorizationHandler, AccountRoleAuthorizationHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, CourseAccessAuthorizationHandler>();
 if (authenticationSettings is not null)
 {
     builder.Services.AddAuthentikAuthentication(authenticationSettings);
@@ -136,12 +140,12 @@ if (authenticationSettings is not null)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden);
 
-    app.MapGet("/courses/{courseId:guid}", GetOwnedCourseAsync)
-        .RequireAuthorization(AuthorizationPolicies.Instructor)
-        .WithSummary("Get a course owned by the authenticated Instructor")
+    app.MapGet("/courses/{courseId:guid}", GetCourseAsync)
+        .RequireAuthorization()
+        .WithSummary(
+            "Get a course owned by the authenticated Instructor or available to the enrolled Learner")
         .Produces<CourseResponse>()
         .ProducesProblem(StatusCodes.Status401Unauthorized)
-        .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
 
     app.MapPut("/courses/{courseId:guid}", UpdateOwnedCourseAsync)
@@ -375,25 +379,28 @@ static async Task<IResult> ListOwnedCoursesAsync(HttpContext context, ICourseSer
         course.Status.ToString())));
 }
 
-static async Task<IResult> GetOwnedCourseAsync(
+static async Task<IResult> GetCourseAsync(
     HttpContext context,
     Guid courseId,
-    ICourseService courseService)
+    ICourseService courseService,
+    IAuthorizationService authorizationService)
 {
-    if (!TryGetAccountId(context.User, out var ownerId))
+    var course = await courseService.GetCourseAsync(courseId, context.RequestAborted);
+    if (course is null ||
+        !(await authorizationService.AuthorizeAsync(
+            context.User,
+            course,
+            AuthorizationPolicies.CourseAccess)).Succeeded)
     {
-        return Results.Forbid();
+        return Results.NotFound();
     }
 
-    var course = await courseService.GetOwnedCourseAsync(ownerId, courseId, context.RequestAborted);
-    return course is null
-        ? Results.NotFound()
-        : Results.Ok(new CourseResponse(
-            course.Id,
-            course.OwnerId,
-            course.Title,
-            course.Description,
-            course.Status.ToString()));
+    return Results.Ok(new CourseResponse(
+        course.Id,
+        course.OwnerId,
+        course.Title,
+        course.Description,
+        course.Status.ToString()));
 }
 
 static async Task<IResult> UpdateOwnedCourseAsync(

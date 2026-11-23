@@ -14,6 +14,8 @@ public interface ICourseStore
         Guid ownerId,
         CancellationToken cancellationToken = default);
 
+    Task<Course?> FindCourseByIdAsync(Guid courseId, CancellationToken cancellationToken = default);
+
     Task<Course?> FindByIdAndOwnerIdAsync(
         Guid courseId,
         Guid ownerId,
