@@ -172,6 +172,89 @@ if (authenticationSettings is not null)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status409Conflict);
+
+    app.MapGet("/courses/{courseId:guid}/enrollments", ListCourseEnrollmentsAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("List enrollments for a course owned by the authenticated Instructor")
+        .Produces<EnrollmentResponse[]>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPost(
+            "/courses/{courseId:guid}/enrollments/{learnerAccountId:guid}/suspend",
+            (HttpContext context, Guid courseId, Guid learnerAccountId, IEnrollmentService service) =>
+                ChangeOwnedEnrollmentAsync(
+                    context,
+                    courseId,
+                    learnerAccountId,
+                    EnrollmentAction.Suspend,
+                    service))
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Suspend a Learner's enrollment in a course owned by the authenticated Instructor")
+        .Produces<EnrollmentResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+    app.MapPost(
+            "/courses/{courseId:guid}/enrollments/{learnerAccountId:guid}/reactivate",
+            (HttpContext context, Guid courseId, Guid learnerAccountId, IEnrollmentService service) =>
+                ChangeOwnedEnrollmentAsync(
+                    context,
+                    courseId,
+                    learnerAccountId,
+                    EnrollmentAction.Reactivate,
+                    service))
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Reactivate a suspended enrollment in a course owned by the authenticated Instructor")
+        .Produces<EnrollmentResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+    app.MapPost(
+            "/courses/{courseId:guid}/enrollments/{learnerAccountId:guid}/remove",
+            (HttpContext context, Guid courseId, Guid learnerAccountId, IEnrollmentService service) =>
+                ChangeOwnedEnrollmentAsync(
+                    context,
+                    courseId,
+                    learnerAccountId,
+                    EnrollmentAction.Remove,
+                    service))
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Remove a Learner's enrollment from a course owned by the authenticated Instructor")
+        .Produces<EnrollmentResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
+
+    app.MapGet("/me/enrollments", ListOwnEnrollmentsAsync)
+        .RequireAuthorization(AuthorizationPolicies.Learner)
+        .WithSummary("List enrollments for the authenticated Learner")
+        .Produces<EnrollmentResponse[]>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden);
+
+    app.MapGet("/me/enrollments/{courseId:guid}", GetOwnEnrollmentAsync)
+        .RequireAuthorization(AuthorizationPolicies.Learner)
+        .WithSummary("Get the authenticated Learner's enrollment in a course")
+        .Produces<EnrollmentResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPost("/me/enrollments/{courseId:guid}/withdraw", WithdrawOwnEnrollmentAsync)
+        .RequireAuthorization(AuthorizationPolicies.Learner)
+        .WithSummary("Withdraw the authenticated Learner's enrollment in a course")
+        .Produces<EnrollmentResponse>()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -459,6 +542,127 @@ static async Task<IResult> EnrollLearnerAsync(
         _ => throw new InvalidOperationException("The enrollment result is inconsistent.")
     };
 }
+
+static async Task<IResult> ListCourseEnrollmentsAsync(
+    HttpContext context,
+    Guid courseId,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var instructorId))
+    {
+        return Results.Forbid();
+    }
+
+    var enrollments = await enrollmentService.ListForOwnedCourseAsync(
+        instructorId,
+        courseId,
+        context.RequestAborted);
+    return enrollments is null
+        ? Results.NotFound()
+        : Results.Ok(enrollments.Select(ToEnrollmentResponse));
+}
+
+static async Task<IResult> ChangeOwnedEnrollmentAsync(
+    HttpContext context,
+    Guid courseId,
+    Guid learnerAccountId,
+    EnrollmentAction action,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var instructorId))
+    {
+        return Results.Forbid();
+    }
+
+    var result = await enrollmentService.ChangeOwnedEnrollmentAsync(
+        instructorId,
+        courseId,
+        learnerAccountId,
+        action,
+        context.RequestAborted);
+    return EnrollmentChangeResponse(result);
+}
+
+static async Task<IResult> ListOwnEnrollmentsAsync(
+    HttpContext context,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var learnerAccountId))
+    {
+        return Results.Forbid();
+    }
+
+    var enrollments = await enrollmentService.ListForLearnerAsync(
+        learnerAccountId,
+        context.RequestAborted);
+    return Results.Ok(enrollments.Select(ToEnrollmentResponse));
+}
+
+static async Task<IResult> GetOwnEnrollmentAsync(
+    HttpContext context,
+    Guid courseId,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var learnerAccountId))
+    {
+        return Results.Forbid();
+    }
+
+    var enrollment = await enrollmentService.GetForLearnerAsync(
+        learnerAccountId,
+        courseId,
+        context.RequestAborted);
+    return enrollment is null
+        ? Results.NotFound()
+        : Results.Ok(ToEnrollmentResponse(enrollment));
+}
+
+static async Task<IResult> WithdrawOwnEnrollmentAsync(
+    HttpContext context,
+    Guid courseId,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var learnerAccountId))
+    {
+        return Results.Forbid();
+    }
+
+    var result = await enrollmentService.WithdrawOwnEnrollmentAsync(
+        learnerAccountId,
+        courseId,
+        context.RequestAborted);
+    return EnrollmentChangeResponse(result);
+}
+
+static IResult EnrollmentChangeResponse(EnrollmentChangeResult result)
+{
+    if (result.Enrollment is not { } enrollment)
+    {
+        return result.Outcome switch
+        {
+            EnrollmentChangeOutcome.InstructorNotAuthorized or
+            EnrollmentChangeOutcome.InstructorInactive or
+            EnrollmentChangeOutcome.LearnerNotAuthorized or
+            EnrollmentChangeOutcome.LearnerInactive => Results.Forbid(),
+            EnrollmentChangeOutcome.CourseNotFound or EnrollmentChangeOutcome.EnrollmentNotFound =>
+                Results.NotFound(),
+            _ => throw new InvalidOperationException("The enrollment change result is inconsistent.")
+        };
+    }
+
+    return result.Outcome switch
+    {
+        EnrollmentChangeOutcome.Changed => Results.Ok(ToEnrollmentResponse(enrollment)),
+        EnrollmentChangeOutcome.InvalidTransition => Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Enrollment state change is not allowed.",
+            detail: "The requested action is not permitted for the current enrollment state."),
+        _ => throw new InvalidOperationException("The enrollment change result is inconsistent.")
+    };
+}
+
+static EnrollmentResponse ToEnrollmentResponse(Kokishin.Domain.Enrollments.Enrollment enrollment) =>
+    new(enrollment.CourseId, enrollment.LearnerAccountId, enrollment.Status.ToString());
 
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
     Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);

@@ -22,6 +22,30 @@ public sealed class SqliteEnrollmentStore(IDbContextFactory<KokishinDbContext> c
                 cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Enrollment>> ListByCourseIdAsync(
+        Guid courseId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.Enrollments
+            .AsNoTracking()
+            .Where(enrollment => enrollment.CourseId == courseId)
+            .OrderBy(enrollment => enrollment.LearnerAccountId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Enrollment>> ListByLearnerAccountIdAsync(
+        Guid learnerAccountId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.Enrollments
+            .AsNoTracking()
+            .Where(enrollment => enrollment.LearnerAccountId == learnerAccountId)
+            .OrderBy(enrollment => enrollment.CourseId)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Enrollment?> AddIfAbsentAsync(
         Enrollment enrollment,
         CancellationToken cancellationToken = default)

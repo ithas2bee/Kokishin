@@ -9,6 +9,14 @@ public interface IEnrollmentStore
         Guid learnerAccountId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<Enrollment>> ListByCourseIdAsync(
+        Guid courseId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Enrollment>> ListByLearnerAccountIdAsync(
+        Guid learnerAccountId,
+        CancellationToken cancellationToken = default);
+
     Task<Enrollment?> AddIfAbsentAsync(
         Enrollment enrollment,
         CancellationToken cancellationToken = default);

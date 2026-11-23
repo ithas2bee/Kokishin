@@ -45,6 +45,11 @@ public class OpenApiTests
             .GetProperty("put");
         var courseEnrollment = paths.GetProperty("/courses/{courseId}/enrollments")
             .GetProperty("post");
+        var courseEnrollmentList = paths.GetProperty("/courses/{courseId}/enrollments")
+            .GetProperty("get");
+        var learnerEnrollmentList = paths.GetProperty("/me/enrollments").GetProperty("get");
+        var learnerEnrollment = paths.GetProperty("/me/enrollments/{courseId}").GetProperty("get");
+        var learnerWithdrawal = paths.GetProperty("/me/enrollments/{courseId}/withdraw").GetProperty("post");
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
@@ -94,6 +99,31 @@ public class OpenApiTests
         Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("403", out _));
         Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("404", out _));
         Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("409", out _));
+        Assert.Equal(
+            "List enrollments for a course owned by the authenticated Instructor",
+            courseEnrollmentList.GetProperty("summary").GetString());
+        Assert.True(courseEnrollmentList.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(courseEnrollmentList.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(courseEnrollmentList.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.True(courseEnrollmentList.GetProperty("responses").TryGetProperty("404", out _));
+        Assert.Equal("List enrollments for the authenticated Learner",
+            learnerEnrollmentList.GetProperty("summary").GetString());
+        Assert.Equal("Get the authenticated Learner's enrollment in a course",
+            learnerEnrollment.GetProperty("summary").GetString());
+        Assert.Equal("Withdraw the authenticated Learner's enrollment in a course",
+            learnerWithdrawal.GetProperty("summary").GetString());
+        Assert.True(learnerWithdrawal.GetProperty("responses").TryGetProperty("409", out _));
+        foreach (var action in new[] { "suspend", "reactivate", "remove" })
+        {
+            var endpoint = paths.GetProperty(
+                    $"/courses/{{courseId}}/enrollments/{{learnerAccountId}}/{action}")
+                .GetProperty("post");
+            Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
+            Assert.True(endpoint.GetProperty("responses").TryGetProperty("401", out _));
+            Assert.True(endpoint.GetProperty("responses").TryGetProperty("403", out _));
+            Assert.True(endpoint.GetProperty("responses").TryGetProperty("404", out _));
+            Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
+        }
         Assert.Contains("200", responseCodes);
         Assert.Contains("503", responseCodes);
         Assert.Contains("500", responseCodes);

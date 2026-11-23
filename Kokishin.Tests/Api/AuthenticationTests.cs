@@ -581,6 +581,238 @@ public class AuthenticationTests
     }
 
     [Fact]
+    public async Task CourseEnrollments_InstructorListsOnlyEnrollmentsForOwnedCourse()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherInstructor = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "other-listing-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherInstructor.Account.Id);
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var ownedCourse = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Owned course");
+        var privateCourse = await courseService.CreateCourseAsync(
+            otherInstructor.Account.Id,
+            "Private course");
+        var enrollmentService = factory.Services.GetRequiredService<IEnrollmentService>();
+        await enrollmentService.EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            ownedCourse.Id,
+            TestIdentities.Learner.AccountId);
+        await enrollmentService.EnrollLearnerAsync(
+            otherInstructor.Account.Id,
+            privateCourse.Id,
+            TestIdentities.Learner.AccountId);
+
+        using var ownedResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/courses/{ownedCourse.Id:D}/enrollments?instructorId={otherInstructor.Account.Id:D}",
+            TestIdentities.Instructor.CreateToken(authority)!);
+        using var ownedResult = JsonDocument.Parse(await ownedResponse.Content.ReadAsStringAsync());
+        using var privateResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/courses/{privateCourse.Id:D}/enrollments",
+            TestIdentities.Instructor.CreateToken(authority)!);
+        using var privateMutationResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/courses/{privateCourse.Id:D}/enrollments/{TestIdentities.Learner.AccountId:D}/suspend",
+            TestIdentities.Instructor.CreateToken(authority)!);
+
+        Assert.Equal(HttpStatusCode.OK, ownedResponse.StatusCode);
+        Assert.Equal(1, ownedResult.RootElement.GetArrayLength());
+        Assert.Equal(ownedCourse.Id.ToString("D"),
+            ownedResult.RootElement[0].GetProperty("courseId").GetString());
+        Assert.Equal(TestIdentities.Learner.AccountId.ToString("D"),
+            ownedResult.RootElement[0].GetProperty("learnerAccountId").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, privateResponse.StatusCode);
+        Assert.DoesNotContain(
+            TestIdentities.Learner.AccountId.ToString("D"),
+            await privateResponse.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.NotFound, privateMutationResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task LearnerEnrollmentViews_AreLimitedToAuthenticatedLearner()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherLearner = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "other-enrollment-viewer",
+            AccountRole.Learner);
+        await lifecycle.ActivateAsync(otherLearner.Account.Id);
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var ownCourse = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Learner's course");
+        var otherCourse = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Other learner's course");
+        var enrollmentService = factory.Services.GetRequiredService<IEnrollmentService>();
+        await enrollmentService.EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            ownCourse.Id,
+            TestIdentities.Learner.AccountId);
+        await enrollmentService.EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            otherCourse.Id,
+            otherLearner.Account.Id);
+
+        using var listResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/me/enrollments?learnerAccountId={otherLearner.Account.Id:D}&role=Instructor",
+            TestIdentities.Learner.CreateToken(authority)!);
+        using var listResult = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
+        using var ownResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/me/enrollments/{ownCourse.Id:D}",
+            TestIdentities.Learner.CreateToken(authority)!);
+        using var otherResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/me/enrollments/{otherCourse.Id:D}",
+            TestIdentities.Learner.CreateToken(authority)!);
+
+        Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+        Assert.Equal(1, listResult.RootElement.GetArrayLength());
+        Assert.Equal(ownCourse.Id.ToString("D"),
+            listResult.RootElement[0].GetProperty("courseId").GetString());
+        Assert.Equal(TestIdentities.Learner.AccountId.ToString("D"),
+            listResult.RootElement[0].GetProperty("learnerAccountId").GetString());
+        Assert.Equal(HttpStatusCode.OK, ownResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, otherResponse.StatusCode);
+        Assert.DoesNotContain(
+            otherLearner.Account.Id.ToString("D"),
+            await otherResponse.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task EnrollmentStateChanges_FollowDecisionAndRepeatedActionConflicts()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var instructorToken = TestIdentities.Instructor.CreateToken(authority)!;
+        var learnerToken = TestIdentities.Learner.CreateToken(authority)!;
+        using var created = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            instructorToken,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+
+        using var suspended = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/courses/{course.Id:D}/enrollments/{TestIdentities.Learner.AccountId:D}/suspend",
+            instructorToken);
+        using var repeatedSuspend = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/courses/{course.Id:D}/enrollments/{TestIdentities.Learner.AccountId:D}/suspend",
+            instructorToken);
+        using var reactivated = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/courses/{course.Id:D}/enrollments/{TestIdentities.Learner.AccountId:D}/reactivate",
+            instructorToken);
+        using var removed = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/courses/{course.Id:D}/enrollments/{TestIdentities.Learner.AccountId:D}/remove",
+            instructorToken);
+        using var reEnrolled = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            instructorToken,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var withdrawn = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/me/enrollments/{course.Id:D}/withdraw",
+            learnerToken,
+            new
+            {
+                learnerAccountId = Guid.NewGuid(),
+                role = nameof(AccountRole.Instructor)
+            });
+        using var repeatedWithdrawal = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Post,
+            $"/me/enrollments/{course.Id:D}/withdraw",
+            learnerToken);
+        using var verifyScope = factory.Services.CreateScope();
+        var database = verifyScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, suspended.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, repeatedSuspend.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reactivated.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, removed.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, reEnrolled.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, withdrawn.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, repeatedWithdrawal.StatusCode);
+        var enrollment = await database.Enrollments.SingleAsync();
+        Assert.Equal(EnrollmentStatus.Withdrawn, enrollment.Status);
+    }
+
+    [Fact]
+    public async Task EnrollmentEndpoints_RequireActiveAccountsAndCorrectRoles()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var anonymousResponse = await client.GetAsync($"/courses/{course.Id:D}/enrollments");
+        using var wrongRoleResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/courses/{course.Id:D}/enrollments?role=Instructor",
+            TestIdentities.Learner.CreateToken(authority)!);
+        using var learnerOwnEnrollmentsResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            "/me/enrollments?learnerAccountId=another-account",
+            TestIdentities.Learner.CreateToken(authority)!);
+        await factory.Services.GetRequiredService<IAccountLifecycleService>()
+            .DeactivateAsync(TestIdentities.Instructor.AccountId);
+        using var inactiveResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            $"/courses/{course.Id:D}/enrollments",
+            TestIdentities.Instructor.CreateToken(authority)!);
+        await factory.Services.GetRequiredService<IAccountLifecycleService>()
+            .DeactivateAsync(TestIdentities.Learner.AccountId);
+        using var inactiveLearnerResponse = await SendEnrollmentManagementRequestAsync(
+            client,
+            HttpMethod.Get,
+            "/me/enrollments",
+            TestIdentities.Learner.CreateToken(authority)!);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, wrongRoleResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, learnerOwnEnrollmentsResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, inactiveResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, inactiveLearnerResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task CourseList_InstructorSeesOnlyOwnedCourses_AndIgnoresClientOwnerId()
     {
         using var authority = new TestOidcAuthority();
@@ -1132,6 +1364,27 @@ public class AuthenticationTests
         if (token is not null)
         {
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendEnrollmentManagementRequestAsync(
+        HttpClient client,
+        HttpMethod method,
+        string path,
+        string? token,
+        object? body = null)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        if (token is not null)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
         }
 
         return await client.SendAsync(request);
