@@ -59,7 +59,7 @@ operations:
   enrollment requirement; see [AD-009](decisions/AD-009-course-publication.md)
   and [AD-008](decisions/AD-008-course-enrollment.md).
 - `POST /courses/{courseId}/enrollments` accepts a `learnerAccountId` for an
-  active Learner account. The active Instructor identity is derived from the
+  active Learner account. The Instructor identity is derived from the
   authenticated principal, and the course must be owned by that Instructor.
   A new enrollment returns `201` with the course ID, learner account ID, and
   `Active` status. Repeating the request for an already active enrollment is
@@ -67,14 +67,38 @@ operations:
   in `Withdrawn` or `Removed` state is explicitly re-enrolled and returns `200`;
   a `Suspended` enrollment returns `409` and remains unchanged. Unknown course
   or learner IDs return `404`; an inactive or non-Learner account returns
-  `400`. Anonymous callers receive `401`; non-Instructors and inactive
-  Instructors receive `403`; an Instructor who does not own the course receives
-  `404`. The request does not accept a caller account ID or role.
+  `400`. Anonymous callers and inactive Instructors receive `401`;
+  non-Instructors receive `403`; an Instructor who does not own the course
+  receives `404`. The request does not accept a caller account ID or role.
+- `GET /courses/{courseId}/enrollments` lists only enrollment IDs and statuses
+  (course ID, learner account ID, and status) for a course owned by the
+  authenticated Instructor. A course not owned by that Instructor returns
+  `404`.
+- `POST /courses/{courseId}/enrollments/{learnerAccountId}/suspend`,
+  `/reactivate`, and `/remove` change an enrollment only through the transitions
+  authorized by [AD-008](decisions/AD-008-course-enrollment.md). Each successful
+  state change returns `200` with the course ID, learner account ID, and new
+  status. A missing or non-owned course or enrollment returns `404`; an
+  unsupported or repeated transition returns `409` without changing state.
+  Removal changes status to `Removed`; it does not delete the enrollment.
+- `GET /me/enrollments` lists the authenticated Learner's own course IDs and
+  enrollment statuses. `GET /me/enrollments/{courseId}` retrieves only that
+  Learner's enrollment in the selected course, returning `404` when no such
+  enrollment exists.
+- `POST /me/enrollments/{courseId}/withdraw` withdraws only the authenticated
+  Learner's own Active or Suspended enrollment. A successful response returns
+  `200` with its course ID, learner account ID, and `Withdrawn` status. Missing
+  enrollment returns `404`; invalid or repeated withdrawal returns `409`.
+  Learner identity is always derived from the authenticated principal, not
+  request data. All enrollment operations require an active account with the
+  required persisted role; anonymous callers receive `401` and the wrong role
+  receives `403`. Enrollment responses contain no grades, submissions, or
+  course content.
 
 Course creation and update validation failures return a `400` Problem Details
 response. Anonymous callers receive `401` and Learners receive `403` for all
 course management operations, including publication status changes and
-enrollment.
+enrollment. A course owned by another Instructor remains hidden with `404`.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

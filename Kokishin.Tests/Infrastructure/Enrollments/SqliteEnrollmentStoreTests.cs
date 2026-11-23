@@ -63,6 +63,36 @@ public sealed class SqliteEnrollmentStoreTests : IAsyncDisposable
         Assert.IsType<SqliteException>(exception.InnerException);
     }
 
+    [Fact]
+    public async Task ListOperations_ReturnOnlyMatchingCourseOrLearner()
+    {
+        var instructor = CreateActiveAccount(AccountRole.Instructor);
+        var learner = CreateActiveAccount(AccountRole.Learner);
+        var otherLearner = CreateActiveAccount(AccountRole.Learner);
+        var firstCourse = new Course(instructor.Id, "Biology");
+        var secondCourse = new Course(instructor.Id, "Chemistry");
+        await using (var dbContext = await CreateDbContextAsync())
+        {
+            dbContext.Accounts.AddRange(instructor, learner, otherLearner);
+            dbContext.Courses.AddRange(firstCourse, secondCourse);
+            dbContext.Enrollments.AddRange(
+                new Enrollment(firstCourse.Id, learner.Id),
+                new Enrollment(firstCourse.Id, otherLearner.Id),
+                new Enrollment(secondCourse.Id, learner.Id));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var store = _services.GetRequiredService<IEnrollmentStore>();
+
+        var courseEnrollments = await store.ListByCourseIdAsync(firstCourse.Id);
+        var learnerEnrollments = await store.ListByLearnerAccountIdAsync(learner.Id);
+
+        Assert.Equal(2, courseEnrollments.Count);
+        Assert.All(courseEnrollments, enrollment => Assert.Equal(firstCourse.Id, enrollment.CourseId));
+        Assert.Equal(2, learnerEnrollments.Count);
+        Assert.All(learnerEnrollments, enrollment => Assert.Equal(learner.Id, enrollment.LearnerAccountId));
+    }
+
     private Task<KokishinDbContext> CreateDbContextAsync() =>
         _services.GetRequiredService<IDbContextFactory<KokishinDbContext>>().CreateDbContextAsync();
 
