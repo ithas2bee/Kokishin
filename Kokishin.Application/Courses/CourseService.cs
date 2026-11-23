@@ -20,6 +20,9 @@ public sealed class CourseService(ICourseStore courseStore) : ICourseService
         CancellationToken cancellationToken = default) =>
         courseStore.ListByOwnerIdAsync(ownerId, cancellationToken);
 
+    public Task<Course?> GetCourseAsync(Guid courseId, CancellationToken cancellationToken = default) =>
+        courseStore.FindCourseByIdAsync(courseId, cancellationToken);
+
     public Task<Course?> GetOwnedCourseAsync(
         Guid ownerId,
         Guid courseId,

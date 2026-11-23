@@ -888,6 +888,101 @@ public class AuthenticationTests
             await privateResponse.Content.ReadAsStringAsync());
     }
 
+    [Theory]
+    [InlineData(CourseStatus.Published, EnrollmentStatus.Active, HttpStatusCode.OK)]
+    [InlineData(CourseStatus.Draft, EnrollmentStatus.Active, HttpStatusCode.NotFound)]
+    [InlineData(CourseStatus.Published, EnrollmentStatus.Suspended, HttpStatusCode.NotFound)]
+    [InlineData(CourseStatus.Published, EnrollmentStatus.Withdrawn, HttpStatusCode.NotFound)]
+    [InlineData(CourseStatus.Published, EnrollmentStatus.Removed, HttpStatusCode.NotFound)]
+    public async Task CourseDetails_LearnerAccessRequiresPublishedCourseAndActiveEnrollment(
+        CourseStatus courseStatus,
+        EnrollmentStatus enrollmentStatus,
+        HttpStatusCode expectedStatus)
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var course = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Enrolled Biology");
+        if (courseStatus == CourseStatus.Published)
+        {
+            await courseService.ChangeOwnedCoursePublicationStatusAsync(
+                TestIdentities.Instructor.AccountId,
+                course.Id,
+                courseStatus);
+        }
+
+        var enrollmentService = factory.Services.GetRequiredService<IEnrollmentService>();
+        await enrollmentService.EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            course.Id,
+            TestIdentities.Learner.AccountId);
+        if (enrollmentStatus == EnrollmentStatus.Suspended)
+        {
+            await enrollmentService.ChangeOwnedEnrollmentAsync(
+                TestIdentities.Instructor.AccountId,
+                course.Id,
+                TestIdentities.Learner.AccountId,
+                EnrollmentAction.Suspend);
+        }
+        else if (enrollmentStatus == EnrollmentStatus.Withdrawn)
+        {
+            await enrollmentService.WithdrawOwnEnrollmentAsync(
+                TestIdentities.Learner.AccountId,
+                course.Id);
+        }
+        else if (enrollmentStatus == EnrollmentStatus.Removed)
+        {
+            await enrollmentService.ChangeOwnedEnrollmentAsync(
+                TestIdentities.Instructor.AccountId,
+                course.Id,
+                TestIdentities.Learner.AccountId,
+                EnrollmentAction.Remove);
+        }
+
+        using var response = await SendRoleAuthorizationRequestAsync(
+            client,
+            $"/courses/{course.Id:D}",
+            TestIdentities.Learner.CreateToken(authority)!);
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedStatus != HttpStatusCode.OK)
+        {
+            Assert.DoesNotContain("Enrolled Biology", await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Fact]
+    public async Task CourseDetails_LearnerWithoutEnrollmentCannotReadCourse()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var courseService = factory.Services.GetRequiredService<ICourseService>();
+        var course = await courseService.CreateCourseAsync(
+            TestIdentities.Instructor.AccountId,
+            "Private Biology");
+        await courseService.ChangeOwnedCoursePublicationStatusAsync(
+            TestIdentities.Instructor.AccountId,
+            course.Id,
+            CourseStatus.Published);
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/courses/{course.Id:D}?ownerId={TestIdentities.Instructor.AccountId:D}");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer",
+            TestIdentities.Learner.CreateToken(authority)!);
+        request.Headers.Add("X-User-Id", TestIdentities.Instructor.AccountId.ToString("D"));
+        request.Headers.Add("X-Account-Role", AccountRole.Instructor.ToString());
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.DoesNotContain("Private Biology", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task CourseUpdate_InstructorUpdatesOwnedInformationAndIgnoresIdentityFields()
     {
@@ -1201,7 +1296,7 @@ public class AuthenticationTests
     }
 
     [Fact]
-    public async Task CourseManagementQueries_LearnerIsForbiddenAndAnonymousCallerIsUnauthorized()
+    public async Task CourseList_LearnerIsForbidden_CourseDetailsRequireEnrollmentAndAnonymousCallerIsUnauthorized()
     {
         using var authority = new TestOidcAuthority();
         using var factory = CreateFactory(authority);
@@ -1221,7 +1316,7 @@ public class AuthenticationTests
         using var anonymousDetailsResponse = await client.GetAsync($"/courses/{course.Id:D}");
 
         Assert.Equal(HttpStatusCode.Forbidden, learnerListResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, learnerDetailsResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, learnerDetailsResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousListResponse.StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousDetailsResponse.StatusCode);
     }

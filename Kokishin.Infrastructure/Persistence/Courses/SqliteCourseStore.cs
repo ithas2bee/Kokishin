@@ -41,6 +41,14 @@ public sealed class SqliteCourseStore(IDbContextFactory<KokishinDbContext> conte
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Course?> FindCourseByIdAsync(Guid courseId, CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await dbContext.Courses
+            .AsNoTracking()
+            .SingleOrDefaultAsync(course => course.Id == courseId, cancellationToken);
+    }
+
     public async Task<Course?> FindByIdAndOwnerIdAsync(
         Guid courseId,
         Guid ownerId,

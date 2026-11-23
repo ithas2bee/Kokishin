@@ -180,5 +180,10 @@ public sealed class CourseServiceTests
             FoundOwnerId = ownerId;
             return Task.FromResult(Course);
         }
+
+        public Task<Course?> FindCourseByIdAsync(
+            Guid courseId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Course?.Id == courseId ? Course : null);
     }
 }
