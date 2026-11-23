@@ -6,9 +6,11 @@ using System.Text.Json;
 using System.Net.Http.Json;
 using Kokishin.Application.Accounts;
 using Kokishin.Application.Courses;
+using Kokishin.Application.Enrollments;
 using Kokishin.Domain.Courses;
 using Kokishin.Api;
 using Kokishin.Domain.Accounts;
+using Kokishin.Domain.Enrollments;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -333,6 +335,249 @@ public class AuthenticationTests
         using var response = await client.PostAsJsonAsync("/courses", new { title = "Biology" });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_InstructorEnrollsLearner_UsesAuthenticatedOwnerAndPreservesRole()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+
+        using var response = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new
+            {
+                learnerAccountId = TestIdentities.Learner.AccountId,
+                role = nameof(AccountRole.Instructor),
+                instructorId = Guid.NewGuid()
+            });
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var enrollment = result.RootElement;
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+        var persisted = await database.Enrollments.SingleAsync();
+        var persistedCourse = await database.Courses.SingleAsync(item => item.Id == course.Id);
+        var persistedLearner = await database.Accounts
+            .SingleAsync(account => account.Id == TestIdentities.Learner.AccountId);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Equal(course.Id, Guid.Parse(enrollment.GetProperty("courseId").GetString()!));
+        Assert.Equal(
+            TestIdentities.Learner.AccountId,
+            Guid.Parse(enrollment.GetProperty("learnerAccountId").GetString()!));
+        Assert.Equal(EnrollmentStatus.Active.ToString(), enrollment.GetProperty("status").GetString());
+        Assert.Equal(TestIdentities.Instructor.AccountId, course.OwnerId);
+        Assert.Equal(course.Id, persisted.CourseId);
+        Assert.Equal(TestIdentities.Learner.AccountId, persisted.LearnerAccountId);
+        Assert.Equal(EnrollmentStatus.Active, persisted.Status);
+        Assert.Equal(TestIdentities.Instructor.AccountId, persistedCourse.OwnerId);
+        Assert.NotEqual(TestIdentities.Learner.AccountId, persistedCourse.OwnerId);
+        Assert.Equal(AccountRole.Learner, persistedLearner.Role);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_RepeatedActiveEnrollment_IsIdempotent()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var body = new { learnerAccountId = TestIdentities.Learner.AccountId };
+
+        using var firstResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            body);
+        using var secondResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            body);
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+        Assert.Equal(1, await database.Enrollments.CountAsync());
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_OnlyActiveOwnerInstructorMayEnroll()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var otherInstructor = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "other-enrollment-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(otherInstructor.Account.Id);
+
+        using var anonymousResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            null,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var learnerResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Learner.CreateToken(authority)!,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var otherInstructorResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            authority.CreateToken("other-enrollment-instructor"),
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, learnerResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, otherInstructorResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_UnknownCourseOrLearner_ReturnsNotFound()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var token = TestIdentities.Instructor.CreateToken(authority)!;
+
+        using var unknownCourse = await SendEnrollmentRequestAsync(
+            client,
+            Guid.NewGuid(),
+            token,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var unknownLearner = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            token,
+            new { learnerAccountId = Guid.NewGuid() });
+
+        Assert.Equal(HttpStatusCode.NotFound, unknownCourse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, unknownLearner.StatusCode);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_InstructorOrInactiveAccountCannotBeEnrolled()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var lifecycle = factory.Services.GetRequiredService<IAccountLifecycleService>();
+        var instructor = await lifecycle.ProvisionVerifiedIdentityAsync(
+            TestOidcAuthority.Issuer,
+            "learner-target-instructor",
+            AccountRole.Instructor);
+        await lifecycle.ActivateAsync(instructor.Account.Id);
+
+        using var instructorResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { learnerAccountId = instructor.Account.Id });
+        await lifecycle.DeactivateAsync(TestIdentities.Learner.AccountId);
+        using var inactiveLearnerResponse = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var databaseScope = factory.Services.CreateScope();
+        var database = databaseScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, instructorResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, inactiveLearnerResponse.StatusCode);
+        Assert.Empty(await database.Enrollments.ToListAsync());
+        Assert.Equal(
+            AccountRole.Instructor,
+            (await database.Accounts.SingleAsync(account => account.Id == instructor.Account.Id)).Role);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_WithdrawnEnrollmentRequiresExplicitReEnrollment()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        var enrollmentService = factory.Services.GetRequiredService<IEnrollmentService>();
+        await enrollmentService.EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            course.Id,
+            TestIdentities.Learner.AccountId);
+        using (var databaseScope = factory.Services.CreateScope())
+        {
+            var database = databaseScope.ServiceProvider
+                .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+            var enrollment = await database.Enrollments.SingleAsync();
+            enrollment.Withdraw();
+            await database.SaveChangesAsync();
+        }
+
+        using var response = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDatabase = verifyScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(EnrollmentStatus.Active,
+            (await verifyDatabase.Enrollments.SingleAsync()).Status);
+    }
+
+    [Fact]
+    public async Task CourseEnrollment_SuspendedEnrollmentCannotBeReactivatedByEnrollRequest()
+    {
+        using var authority = new TestOidcAuthority();
+        using var factory = CreateFactory(authority);
+        using var client = factory.CreateClient();
+        var course = await factory.Services.GetRequiredService<ICourseService>()
+            .CreateCourseAsync(TestIdentities.Instructor.AccountId, "Biology");
+        await factory.Services.GetRequiredService<IEnrollmentService>().EnrollLearnerAsync(
+            TestIdentities.Instructor.AccountId,
+            course.Id,
+            TestIdentities.Learner.AccountId);
+        using (var databaseScope = factory.Services.CreateScope())
+        {
+            var database = databaseScope.ServiceProvider
+                .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+            var enrollment = await database.Enrollments.SingleAsync();
+            enrollment.Suspend();
+            await database.SaveChangesAsync();
+        }
+
+        using var response = await SendEnrollmentRequestAsync(
+            client,
+            course.Id,
+            TestIdentities.Instructor.CreateToken(authority)!,
+            new { learnerAccountId = TestIdentities.Learner.AccountId });
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDatabase = verifyScope.ServiceProvider
+            .GetRequiredService<Kokishin.Infrastructure.Persistence.KokishinDbContext>();
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(EnrollmentStatus.Suspended,
+            (await verifyDatabase.Enrollments.SingleAsync()).Status);
     }
 
     [Fact]
@@ -871,6 +1116,24 @@ public class AuthenticationTests
             Content = JsonContent.Create(body)
         };
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendEnrollmentRequestAsync(
+        HttpClient client,
+        Guid courseId,
+        string? token,
+        object body)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/courses/{courseId:D}/enrollments")
+        {
+            Content = JsonContent.Create(body)
+        };
+        if (token is not null)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
         return await client.SendAsync(request);
     }
 

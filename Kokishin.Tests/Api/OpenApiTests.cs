@@ -43,6 +43,8 @@ public class OpenApiTests
         var courseUpdate = paths.GetProperty("/courses/{courseId}").GetProperty("put");
         var coursePublicationStatus = paths.GetProperty("/courses/{courseId}/publication-status")
             .GetProperty("put");
+        var courseEnrollment = paths.GetProperty("/courses/{courseId}/enrollments")
+            .GetProperty("post");
         var responses = get.GetProperty("responses");
         var responseCodes = responses.EnumerateObject().Select(item => item.Name).ToArray();
 
@@ -83,6 +85,15 @@ public class OpenApiTests
         Assert.True(coursePublicationStatus.GetProperty("responses").TryGetProperty("401", out _));
         Assert.True(coursePublicationStatus.GetProperty("responses").TryGetProperty("403", out _));
         Assert.True(coursePublicationStatus.GetProperty("responses").TryGetProperty("404", out _));
+        Assert.Equal("Enroll an active Learner in a course owned by the authenticated Instructor",
+            courseEnrollment.GetProperty("summary").GetString());
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("201", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("200", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("400", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("401", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("403", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("404", out _));
+        Assert.True(courseEnrollment.GetProperty("responses").TryGetProperty("409", out _));
         Assert.Contains("200", responseCodes);
         Assert.Contains("503", responseCodes);
         Assert.Contains("500", responseCodes);

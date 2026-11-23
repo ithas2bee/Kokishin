@@ -73,6 +73,25 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.ToTable("Courses", (string)null);
                 });
 
+            modelBuilder.Entity("Kokishin.Domain.Enrollments.Enrollment", b =>
+                {
+                    b.Property<Guid>("CourseId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("LearnerAccountId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CourseId", "LearnerAccountId");
+
+                    b.HasIndex("LearnerAccountId");
+
+                    b.ToTable("Enrollments", (string)null);
+                });
+
             modelBuilder.Entity("Kokishin.Domain.Profiles.Profile", b =>
                 {
                     b.Property<Guid>("AccountId")
@@ -117,6 +136,21 @@ namespace Kokishin.Infrastructure.Persistence.Migrations
                     b.HasOne("Kokishin.Domain.Accounts.Account", null)
                         .WithMany()
                         .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Kokishin.Domain.Enrollments.Enrollment", b =>
+                {
+                    b.HasOne("Kokishin.Domain.Courses.Course", null)
+                        .WithMany()
+                        .HasForeignKey("CourseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Kokishin.Domain.Accounts.Account", null)
+                        .WithMany()
+                        .HasForeignKey("LearnerAccountId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -58,10 +58,23 @@ operations:
   create or modify enrollments and Published does not bypass the active
   enrollment requirement; see [AD-009](decisions/AD-009-course-publication.md)
   and [AD-008](decisions/AD-008-course-enrollment.md).
+- `POST /courses/{courseId}/enrollments` accepts a `learnerAccountId` for an
+  active Learner account. The active Instructor identity is derived from the
+  authenticated principal, and the course must be owned by that Instructor.
+  A new enrollment returns `201` with the course ID, learner account ID, and
+  `Active` status. Repeating the request for an already active enrollment is
+  idempotent and returns `200` without creating another record. An enrollment
+  in `Withdrawn` or `Removed` state is explicitly re-enrolled and returns `200`;
+  a `Suspended` enrollment returns `409` and remains unchanged. Unknown course
+  or learner IDs return `404`; an inactive or non-Learner account returns
+  `400`. Anonymous callers receive `401`; non-Instructors and inactive
+  Instructors receive `403`; an Instructor who does not own the course receives
+  `404`. The request does not accept a caller account ID or role.
 
 Course creation and update validation failures return a `400` Problem Details
 response. Anonymous callers receive `401` and Learners receive `403` for all
-course management operations, including publication status changes.
+course management operations, including publication status changes and
+enrollment.
 
 The generated document describes the `200` and `503` plain-text health results,
 the authenticated profile and course operations, and the `500` error response

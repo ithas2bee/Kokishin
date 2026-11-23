@@ -172,7 +172,10 @@ required display name and optional description, using the account ID as a
 one-to-one foreign key. The `Courses` table stores each course's stable ID,
 owning account ID, required title, optional description, and status. New courses
 start as `Draft`, and their owner ID is derived from the authenticated Instructor
-rather than supplied by the client.
+rather than supplied by the client. The `Enrollments` table uses the course and
+learner account IDs as a composite primary key, records the enrollment status,
+and references existing courses and accounts. Only active Learner accounts may
+be enrolled by an active Instructor who owns the course.
 
 Install the EF command-line tool once, then apply all migrations:
 
@@ -181,6 +184,15 @@ dotnet tool install --global dotnet-ef --version 10.0.13
 dotnet ef database update \
   --project Kokishin.Infrastructure \
   --startup-project Kokishin.Api
+```
+
+Migration `20261121165235_AddCourseEnrollments` creates `Enrollments` with
+`CourseId`, `LearnerAccountId`, and `Status`; a composite primary key across the
+two IDs; cascading foreign keys to `Courses` and `Accounts`; and an index on
+`LearnerAccountId`. After merging this change, apply it with:
+
+```sh
+dotnet ef database update --project Kokishin.Infrastructure --startup-project Kokishin.Api
 ```
 
 Create future migrations and apply them with:

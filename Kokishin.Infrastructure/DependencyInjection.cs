@@ -1,9 +1,11 @@
 using Kokishin.Application.Accounts;
 using Kokishin.Application.Courses;
+using Kokishin.Application.Enrollments;
 using Kokishin.Application.Profiles;
 using Kokishin.Infrastructure.Persistence;
 using Kokishin.Infrastructure.Persistence.Accounts;
 using Kokishin.Infrastructure.Persistence.Courses;
+using Kokishin.Infrastructure.Persistence.Enrollments;
 using Kokishin.Infrastructure.Persistence.Profiles;
 using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.EntityFrameworkCore;
@@ -48,6 +50,7 @@ public static class DependencyInjection
         services.AddDbContextFactory<KokishinDbContext>(options => options.UseSqlite(connectionString));
         services.AddSingleton<IAccountStore, SqliteAccountStore>();
         services.AddSingleton<ICourseStore, SqliteCourseStore>();
+        services.AddSingleton<IEnrollmentStore, SqliteEnrollmentStore>();
         services.AddSingleton<IProfileStore, SqliteProfileStore>();
         services.AddSingleton<IDurableSessionTicketStore, SqliteSessionTicketStore>();
         services.AddHealthChecks().AddDbContextCheck<KokishinDbContext>("database");

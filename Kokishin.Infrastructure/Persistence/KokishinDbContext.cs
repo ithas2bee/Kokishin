@@ -1,5 +1,6 @@
 using Kokishin.Domain.Accounts;
 using Kokishin.Domain.Courses;
+using Kokishin.Domain.Enrollments;
 using Kokishin.Domain.Profiles;
 using Kokishin.Infrastructure.Persistence.Sessions;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,8 @@ public sealed class KokishinDbContext(DbContextOptions<KokishinDbContext> option
     public DbSet<Account> Accounts => Set<Account>();
 
     public DbSet<Course> Courses => Set<Course>();
+
+    public DbSet<Enrollment> Enrollments => Set<Enrollment>();
 
     public DbSet<Profile> Profiles => Set<Profile>();
 
@@ -64,6 +67,23 @@ public sealed class KokishinDbContext(DbContextOptions<KokishinDbContext> option
             entity.HasOne<Account>()
                 .WithMany()
                 .HasForeignKey(course => course.OwnerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Enrollment>(entity =>
+        {
+            entity.ToTable("Enrollments");
+            entity.HasKey(enrollment => new { enrollment.CourseId, enrollment.LearnerAccountId });
+            entity.Property(enrollment => enrollment.Status)
+                .HasConversion<string>()
+                .IsRequired();
+            entity.HasOne<Course>()
+                .WithMany()
+                .HasForeignKey(enrollment => enrollment.CourseId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Account>()
+                .WithMany()
+                .HasForeignKey(enrollment => enrollment.LearnerAccountId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

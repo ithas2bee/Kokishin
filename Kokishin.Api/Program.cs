@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Claims;
 using Kokishin.Application;
 using Kokishin.Application.Courses;
+using Kokishin.Application.Enrollments;
 using Kokishin.Api;
 using Kokishin.Application.Profiles;
 using Kokishin.Infrastructure;
@@ -160,6 +161,17 @@ if (authenticationSettings is not null)
         .ProducesProblem(StatusCodes.Status401Unauthorized)
         .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status404NotFound);
+
+    app.MapPost("/courses/{courseId:guid}/enrollments", EnrollLearnerAsync)
+        .RequireAuthorization(AuthorizationPolicies.Instructor)
+        .WithSummary("Enroll an active Learner in a course owned by the authenticated Instructor")
+        .Produces<EnrollmentResponse>(StatusCodes.Status201Created)
+        .Produces<EnrollmentResponse>(StatusCodes.Status200OK)
+        .ProducesValidationProblem()
+        .ProducesProblem(StatusCodes.Status401Unauthorized)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
+        .ProducesProblem(StatusCodes.Status404NotFound)
+        .ProducesProblem(StatusCodes.Status409Conflict);
 }
 
 app.MapMethods("/health/database", [HttpMethods.Get, HttpMethods.Head], async (
@@ -389,6 +401,65 @@ static IResult PublicationStatusValidationProblem(string message) =>
         ["status"] = [message]
     });
 
+static async Task<IResult> EnrollLearnerAsync(
+    HttpContext context,
+    Guid courseId,
+    EnrollLearnerRequest request,
+    IEnrollmentService enrollmentService)
+{
+    if (!TryGetAccountId(context.User, out var instructorId))
+    {
+        return Results.Forbid();
+    }
+
+    if (request.LearnerAccountId == Guid.Empty)
+    {
+        return Results.ValidationProblem(new Dictionary<string, string[]>
+        {
+            ["learnerAccountId"] = ["Learner account is required."]
+        });
+    }
+
+    var result = await enrollmentService.EnrollLearnerAsync(
+        instructorId,
+        courseId,
+        request.LearnerAccountId,
+        context.RequestAborted);
+    if (result.Enrollment is not { } enrollment)
+    {
+        return result.Outcome switch
+        {
+            EnrollLearnerOutcome.InstructorNotAuthorized or EnrollLearnerOutcome.InstructorInactive =>
+                Results.Forbid(),
+            EnrollLearnerOutcome.CourseNotFound or EnrollLearnerOutcome.LearnerNotFound =>
+                Results.NotFound(),
+            EnrollLearnerOutcome.LearnerNotEligible => Results.ValidationProblem(
+                new Dictionary<string, string[]>
+                {
+                    ["learnerAccountId"] = ["Only active Learner accounts may be enrolled."]
+                }),
+            _ => throw new InvalidOperationException("The enrollment result is inconsistent.")
+        };
+    }
+
+    var response = new EnrollmentResponse(
+        enrollment.CourseId,
+        enrollment.LearnerAccountId,
+        enrollment.Status.ToString());
+    return result.Outcome switch
+    {
+        EnrollLearnerOutcome.Created =>
+            Results.Created($"/courses/{courseId:D}/enrollments", response),
+        EnrollLearnerOutcome.AlreadyActive or EnrollLearnerOutcome.ReEnrolled =>
+            Results.Ok(response),
+        EnrollLearnerOutcome.EnrollmentSuspended => Results.Problem(
+            statusCode: StatusCodes.Status409Conflict,
+            title: "Enrollment is suspended.",
+            detail: "The suspended enrollment must be reactivated before the learner can be enrolled again."),
+        _ => throw new InvalidOperationException("The enrollment result is inconsistent.")
+    };
+}
+
 static bool TryGetAccountId(ClaimsPrincipal principal, out Guid accountId) =>
     Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out accountId);
 
@@ -402,11 +473,18 @@ internal sealed record UpdateCourseRequest(string Title, string? Description);
 
 internal sealed record ChangeCoursePublicationStatusRequest(string? Status);
 
+internal sealed record EnrollLearnerRequest(Guid LearnerAccountId);
+
 internal sealed record CourseResponse(
     Guid Id,
     Guid OwnerId,
     string Title,
     string? Description,
+    string Status);
+
+internal sealed record EnrollmentResponse(
+    Guid CourseId,
+    Guid LearnerAccountId,
     string Status);
 
 public partial class Program;
